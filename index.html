@@ -523,7 +523,7 @@ function cellsAround(lat,lon){ const r=400; return cellsInBounds(lat-r/mPerLat, 
 let saveTimer=null; const announced=new Set();
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveUnlocked,2500); }
 async function saveUnlocked(){ clearTimeout(saveTimer); await idb.set("kv","unlocked",Object.fromEntries(unlocked)).catch(()=>{}); }
-function unlockAt(p, touched){
+function unlockAt(p, touched, h){
   const [y,x]=[Math.floor(p[0]/BUCKET_LAT), Math.floor(p[1]/BUCKET_LON)];
   let gained=0;
   for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
@@ -531,6 +531,10 @@ function unlockAt(p, touched){
     for(const pid of arr){
       if(unlocked.has(pid)) continue;
       const pc=pieces.get(pid);
+      if(h){ // bare biter som går omtrent samme vei som du beveger deg
+        const k=mPerLon(pc.a[0]), vx=(pc.b[1]-pc.a[1])*k, vy=(pc.b[0]-pc.a[0])*mPerLat, L=Math.hypot(vx,vy);
+        if(L>0 && Math.abs(vx*h[0]+vy*h[1])/L < 0.8) continue;
+      }
       if(distToSeg(p,pc.a,pc.b)<=UNLOCK_RADIUS){
         const len=Math.round(pc.len*10)/10;
         unlocked.set(pid,len); totalUnlocked+=len; gained+=len;
@@ -543,9 +547,10 @@ function unlockAt(p, touched){
 // Lås opp langs linjen fra a til b (fyller hull mellom GPS-punkter)
 function unlockAlong(a, b, touched){
   const d = dist(a,b);
-  if(d>150) return unlockAt(b,touched);
+  if(d>150 || d<2) return 0;
+  const k=mPerLon(a[0]), h=[(b[1]-a[1])*k/d, (b[0]-a[0])*mPerLat/d];
   const n=Math.max(1,Math.ceil(d/8)); let g=0;
-  for(let i=1;i<=n;i++) g+=unlockAt(lerp(a,b,i/n),touched);
+  for(let i=0;i<=n;i++) g+=unlockAt(lerp(a,b,i/n),touched,h);
   return g;
 }
 function afterUnlock(touched, announce){
@@ -645,7 +650,7 @@ function trackPoint(p, acc, t){
     if(speed>MAX_SPEED*1.6){ run.last={p,t}; return; } // hopp i GPS
     run.dist+=d;
     if(speed<=MAX_SPEED) run.newM += unlockAlong(run.last.p,p,touched);
-  } else run.newM += unlockAt(p,touched);
+  }
   run.last={p,t}; run.pts.push([+p[0].toFixed(6),+p[1].toFixed(6),Math.round(t/1000)]);
   runLine.addLatLng(p);
   afterUnlock(touched,true);
@@ -772,7 +777,6 @@ async function importGpx(files){
       d+=seg;
       if(!(dt>0 && seg/dt>MAX_SPEED)) newM+=unlockAlong(a,b,touched);
     }
-    if(pts.length) newM+=unlockAt(pts[0],touched);
     const dur = pts[0][2]&&pts[pts.length-1][2] ? Math.round((pts[pts.length-1][2]-pts[0][2])/1000) : 0;
     runs.push({id,start,dur,dist:Math.round(d),newM:Math.round(newM),src:"gpx",pts:thin(pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6),p[2]?Math.round(p[2]/1000):0]))});
     afterUnlock(touched,false);
