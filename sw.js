@@ -1,8 +1,8 @@
 // Løpekart service worker: appen fungerer offline, og kartfliser du har sett, caches.
-const APP = "lopekart-app-v9";
+const APP = "lopekart-app-v10";
 const TILES = "lopekart-tiles-v1";
 const MAX_TILES = 3000;
-const SHELL = ["./", "index.html", "manifest.webmanifest", "leaflet.js", "leaflet.css",
+const SHELL = ["./", "index.html", "manifest.webmanifest", "leaflet.js", "leaflet.css", "fb-app.js", "fb-auth.js", "fb-store.js",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

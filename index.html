@@ -110,6 +110,23 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ov-search{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;margin:4px 0 4px}
 .btn.small{font-size:16px;padding:12px 16px;width:100%}
 .stats{cursor:pointer}
+.login{position:fixed;inset:0;z-index:3000;background:var(--bg);display:flex;align-items:center;justify-content:center;
+  padding:calc(env(safe-area-inset-top,0px) + 24px) max(20px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) max(20px,env(safe-area-inset-left,0px))}
+.login-card{max-width:360px;width:100%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}
+.login-card img{border-radius:18px;box-shadow:var(--shadow)}
+.login-card h1{font:700 40px/1 var(--f-display);text-transform:uppercase;letter-spacing:.03em;margin:6px 0 0}
+.login-card p{margin:0;color:var(--fg);max-width:34ch}
+.login-card .sub{color:var(--muted);font-size:13px}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;margin-top:8px;padding:14px 18px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:600 17px/1 var(--f-body);box-shadow:var(--shadow)}
+.btn-google svg{width:22px;height:22px}
+.login-err{color:var(--danger)!important;min-height:1.2em;font-size:14px}
+.acct{display:flex;align-items:center;gap:12px;padding:12px;margin-top:10px;border-radius:12px;background:var(--bg)}
+.acct .t{flex:1;min-width:0;display:flex;flex-direction:column}
+.acct .t b{font-weight:600}
+.acct .t span{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sync-state[data-s="ok"]{color:var(--open-ink)}
+#sync-state[data-s="err"]{color:var(--danger)}
+.acct .btn{flex:0 0 auto;font-size:15px;padding:10px 14px}
 .row svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--muted);flex:none}
 .row.danger,.row.danger svg{color:var(--danger)}
 .close{float:right;border:0;background:var(--line);border-radius:999px;width:34px;height:34px;font-size:18px;line-height:1}
@@ -126,6 +143,17 @@ ol.steps li{margin:4px 0}
 </head>
 <body>
 <div id="map" aria-label="Kart"></div>
+
+<div class="login" id="login" hidden>
+  <div class="login-card">
+    <img src="icon-192.png" alt="" width="72" height="72">
+    <h1>Løpekart</h1>
+    <p>Lås opp veiene du løper og går. Logg inn, så lagres fremgangen på kontoen din og følger deg til nye telefoner.</p>
+    <button class="btn-google" id="btn-google"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.6 13.2l7.8 6.1C12.3 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.4 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6.1C1 16.5 0 20.1 0 24s1 7.5 2.6 10.8l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.8l-7.4-5.8c-2.1 1.4-4.8 2.2-8.4 2.2-6.3 0-11.7-4.1-13.6-9.8l-7.8 6.1C6.6 42.6 14.6 48 24 48z"/></svg>Logg inn med Google</button>
+    <p class="login-err" id="login-err" role="alert"></p>
+    <p class="sub">Turene dine er private. Bare du kan se dem.</p>
+  </div>
+</div>
 
 <div class="top">
   <div class="brand"><b>Løpekart</b><span id="area-name">Finner posisjonen din…</span></div>
@@ -168,6 +196,7 @@ ol.steps li{margin:4px 0}
     <button class="close" data-close aria-label="Lukk">✕</button>
     <h2>Løpekart</h2>
     <p class="sub" id="menu-sum"></p>
+    <div class="acct"><div class="t"><b id="acct-name"></b><span id="acct-mail"></span><span id="sync-state" data-s="busy">Synkroniserer…</span></div><button class="btn ghost" id="m-logout">Logg ut</button></div>
     <div class="list" style="margin-top:8px">
       <button class="row" id="m-overview"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><div class="t"><b>Oversikt</b><span>Bergen, bydeler og gater du har låst opp</span></div></button>
       <button class="row" id="m-history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><div class="t"><b>Turer</b><span>Løpeturer, gåturer og ruter</span></div></button>
@@ -214,7 +243,7 @@ ol.steps li{margin:4px 0}
     </ol>
     <p class="sub">Turer som allerede er importert, hoppes over.</p>
     <h3>Lagring</h3>
-    <p>Alt lagres bare på denne telefonen, i nettleseren. Ta en sikkerhetskopi av og til, for sletter du nettleserdata, forsvinner fremgangen.</p>
+    <p>Fremgangen lagres på telefonen og på kontoen din, så den følger med hvis du bytter telefon eller sletter nettleserdata. Bare du kan se turene dine.</p>
     <p class="sub">Kartdata © OpenStreetMap-bidragsytere.</p>
   </div>
 </div>
@@ -234,6 +263,9 @@ ol.steps li{margin:4px 0}
 <input type="file" id="f-restore" accept=".json,application/json" hidden>
 
 <script src="leaflet.js"></script>
+<script src="fb-app.js"></script>
+<script src="fb-auth.js"></script>
+<script src="fb-store.js"></script>
 <script>
 "use strict";
 /* ---------- Konstanter ---------- */
@@ -563,7 +595,7 @@ function cellsAround(lat,lon){ const r=400; return cellsInBounds(lat-r/mPerLat, 
 /* ---------- Opplåsing ---------- */
 let saveTimer=null; const announced=new Set();
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveUnlocked,2500); }
-async function saveUnlocked(){ clearTimeout(saveTimer); await idb.set("kv","unlocked",Object.fromEntries(unlocked)).catch(()=>{}); }
+async function saveUnlocked(){ clearTimeout(saveTimer); await idb.set("kv",UK("unlocked"),Object.fromEntries(unlocked)).catch(()=>{}); }
 const uLen = v => typeof v==="number" ? v : v[0];
 function pieceName(pc){ for(const wid of pc.ways){ const w=ways.get(wid); if(w&&w.name) return w.name; } return ""; }
 function unlockAt(p, touched, h){
@@ -581,7 +613,7 @@ function unlockAt(p, touched, h){
       if(distToSeg(p,pc.a,pc.b)<=UNLOCK_RADIUS){
         const len=Math.round(pc.len*10)/10;
         unlocked.set(pid,[len, pieceName(pc), +((pc.a[0]+pc.b[0])/2).toFixed(5), +((pc.a[1]+pc.b[1])/2).toFixed(5)]);
-        totalUnlocked+=len; gained+=len;
+        totalUnlocked+=len; gained+=len; cloudQueue(pid);
         for(const wid of pc.ways) touched.add(wid);
       }
     }
@@ -752,17 +784,18 @@ async function stopRun(){
   const e=elapsed();
   if(run.dist>=100){
     runs.unshift({id:"live-"+run.start, start:run.start, dur:Math.round(e), dist:Math.round(run.dist), newM:Math.round(run.newM), src:"live", type:run.type||"run", pts:thin(run.pts)});
-    await idb.set("kv","runs",runs).catch(()=>{});
+    cloudSaveRun(runs[0]);
+    await idb.set("kv",UK("runs"),runs).catch(()=>{});
     toast(`${TYPE_LABEL[run.type||"run"]} lagret: ${fmtKm(run.dist)} km, ${Math.round(run.newM)} m ny vei`);
   }
   run=null; try{wakeLock?.release();}catch{} wakeLock=null;
-  await idb.set("kv","draft",null).catch(()=>{});
-  await saveUnlocked(); setRunUI(); updateStats();
+  await idb.set("kv",UK("draft"),null).catch(()=>{});
+  await saveUnlocked(); cloudFlush(); setRunUI(); updateStats();
 }
 function thin(pts){ const out=[]; let last=null; for(const p of pts){ if(!last||dist(last,p)>=12){ out.push(p); last=p; } } if(pts.length&&out[out.length-1]!==pts[pts.length-1]) out.push(pts[pts.length-1]); return out; }
 // mellomlagring i tilfelle appen lukkes midt i en tur
 let draftTimer=setInterval(()=>{ if(run) saveDraft(); },15000);
-function saveDraft(){ if(!run) return; idb.set("kv","draft",{...run, elapsed:elapsed(), active:false, last:null, savedAt:Date.now()}).catch(()=>{}); }
+function saveDraft(){ if(!run) return; idb.set("kv",UK("draft"),{...run, elapsed:elapsed(), active:false, last:null, savedAt:Date.now()}).catch(()=>{}); }
 
 $("btn-start").onclick=()=> run ? stopRun() : startRun();
 $("btn-pause").onclick=togglePause;
@@ -829,13 +862,13 @@ async function importGpx(files){
       if(!(dt>0 && seg/dt>MAX_SPEED)) newM+=unlockAlong(a,b,touched);
     }
     const dur = pts[0][2]&&pts[pts.length-1][2] ? Math.round((pts[pts.length-1][2]-pts[0][2])/1000) : 0;
-    runs.push({id,start,dur,dist:Math.round(d),newM:Math.round(newM),src:"gpx",pts:thin(pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6),p[2]?Math.round(p[2]/1000):0]))});
+    const nr={id,start,dur,dist:Math.round(d),newM:Math.round(newM),src:"gpx",pts:thin(pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6),p[2]?Math.round(p[2]/1000):0]))}; runs.push(nr); cloudSaveRun(nr);
     afterUnlock(touched,false);
     added++; gained+=newM;
   }
   runs.sort((a,b)=>b.start-a.start);
-  await idb.set("kv","runs",runs).catch(()=>{});
-  await saveUnlocked(); updateStats();
+  await idb.set("kv",UK("runs"),runs).catch(()=>{});
+  await saveUnlocked(); cloudFlush(); updateStats();
   $("chip").hidden=true;
   toast(`${added} tur${added===1?"":"er"} importert, ${fmtKm(gained)} km ny vei${skipped?` · ${skipped} hoppet over`:""}`);
 }
@@ -857,7 +890,7 @@ async function restoreBackup(file){
     for(const [k,v] of Object.entries(data.unlocked||{})) if(!unlocked.has(k)){ unlocked.set(k,v); totalUnlocked+=uLen(v); }
     for(const r of data.runs||[]) if(!runs.some(x=>x.id===r.id)) runs.push(r);
     runs.sort((a,b)=>b.start-a.start);
-    await saveUnlocked(); await idb.set("kv","runs",runs);
+    await saveUnlocked(); await idb.set("kv",UK("runs"),runs); cloudPushAll();
     ways.forEach(drawWay); updateStats(); toast("Sikkerhetskopien er hentet inn");
   }catch{ showChip("Filen er ikke en sikkerhetskopi fra Løpekart.",4000); }
 }
@@ -982,28 +1015,137 @@ $("m-export").onclick=()=>{ $("p-menu").hidden=true; exportBackup(); };
 $("m-restore").onclick=()=>{ $("p-menu").hidden=true; $("f-restore").click(); };
 $("f-restore").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) restoreBackup(f); };
 $("m-reset").onclick=async()=>{
-  const ok=await confirmBox("Nullstille alt?","Alle opplåste veier og løpeturer slettes fra denne telefonen. Dette kan ikke angres, med mindre du har en sikkerhetskopi.","Nullstill");
+  const ok=await confirmBox("Nullstille alt?","Alle opplåste veier og turer slettes, både på telefonen og på kontoen din. Dette kan ikke angres, med mindre du har en sikkerhetskopi.","Nullstill");
   if(!ok) return;
   unlocked=new Map(); totalUnlocked=0; runs=[];
-  await idb.set("kv","unlocked",{}); await idb.set("kv","runs",[]);
+  await idb.set("kv",UK("unlocked"),{}); await idb.set("kv",UK("runs"),[]); dirty.clear();
+  cloudReset().catch(e=>{ console.warn(e); showChip("Fikk ikke slettet dataene i skyen. Prøv igjen.",5000); });
   wayOpen.forEach(l=>openLayer.removeLayer(l)); wayOpen.clear(); trackLayer.clearLayers(); updateStats();
 };
 
+/* ---------- Konto og skylagring (Firebase) ---------- */
+const FB_CFG = {apiKey:"AIzaSyBgs3RmEH-BG1T_mm3yHfxJvBaIDGtk_Cs", authDomain:"lopekart-fa918.firebaseapp.com", projectId:"lopekart-fa918",
+  storageBucket:"lopekart-fa918.firebasestorage.app", messagingSenderId:"427431687299", appId:"1:427431687299:web:9f361c94a15d3ce86597b6"};
+let uid=null, user=null, fbAuth=null, db=null;
+const UK = k => uid ? `${uid}:${k}` : k;      // lokale nøkler per bruker
+const NCH = 64;                                 // opplåste biter fordeles på 64 dokumenter
+function chunkOf(pid){ let h=0; for(let i=0;i<pid.length;i++) h=(h*31+pid.charCodeAt(i))|0; return Math.abs(h)%NCH; }
+const userDoc = () => db.collection("users").doc(uid);
+const chunkDoc = c => userDoc().collection("unlocked").doc("c"+String(c).padStart(2,"0"));
+const runDoc = id => userDoc().collection("runs").doc(id);
+function setSync(s){ const e=$("sync-state"); if(!e) return; e.textContent = s==="busy"?"Synkroniserer…": s==="err"?"Ikke synkronisert. Prøver igjen senere.":"Lagret på kontoen din"; e.dataset.s=s; }
+
+const dirty=new Set(); let upTimer=null;
+function cloudQueue(pid){ if(!uid) return; dirty.add(chunkOf(pid)); clearTimeout(upTimer); upTimer=setTimeout(cloudFlush, 15000); }
+async function cloudFlush(){
+  clearTimeout(upTimer); if(!uid || !dirty.size) return;
+  const list=[...dirty]; dirty.clear(); setSync("busy");
+  // lokale biter per dokument
+  const byChunk=new Map(list.map(c=>[c,{}]));
+  for(const [pid,v] of unlocked){ const c=chunkOf(pid); const m=byChunk.get(c); if(m) m[pid]=v; }
+  try{
+    for(const c of list){
+      await db.runTransaction(async tx=>{
+        const ref=chunkDoc(c), snap=await tx.get(ref);
+        const remote = snap.exists ? JSON.parse(snap.data().d||"{}") : {};
+        const merged = {...remote, ...byChunk.get(c)};
+        tx.set(ref,{d:JSON.stringify(merged), n:Object.keys(merged).length, t:Date.now()});
+      });
+    }
+    setSync("ok");
+  }catch(e){ console.warn("synk",e); list.forEach(c=>dirty.add(c)); setSync("err"); }
+}
+const encRun = r => ({...r, pts: JSON.stringify(r.pts||[])});
+const decRun = d => ({...d, pts: typeof d.pts==="string" ? JSON.parse(d.pts) : (d.pts||[])});
+async function cloudSaveRun(r){ if(!uid) return; try{ await runDoc(r.id).set(encRun(r)); }catch(e){ console.warn("tur",e); } }
+async function commitInBatches(ops){ for(let i=0;i<ops.length;i+=400){ const b=db.batch(); ops.slice(i,i+400).forEach(fn=>fn(b)); await b.commit(); } }
+
+async function reconcile(){
+  if(!uid) return; setSync("busy");
+  try{
+    // 1. hent fra skyen og slå sammen med det som ligger på telefonen
+    const snaps = await userDoc().collection("unlocked").get();
+    const remote = new Map();
+    snaps.forEach(d=>{ const o=JSON.parse(d.data().d||"{}"); for(const k in o) remote.set(k,o[k]); });
+    let fromCloud=0;
+    for(const [k,v] of remote) if(!unlocked.has(k)){ unlocked.set(k,v); totalUnlocked+=uLen(v); fromCloud++; }
+    for(const k of unlocked.keys()) if(!remote.has(k)) dirty.add(chunkOf(k));
+    const rs = await userDoc().collection("runs").get();
+    const remoteRuns = new Map(); rs.forEach(d=>remoteRuns.set(d.id, decRun(d.data())));
+    for(const [id,r] of remoteRuns) if(!runs.some(x=>x.id===id)) runs.push(r);
+    runs.sort((a,b)=>b.start-a.start);
+    const ops = runs.filter(r=>!remoteRuns.has(r.id)).map(r=>b=>b.set(runDoc(r.id), encRun(r)));
+    // 2. send det som bare finnes lokalt
+    if(ops.length) await commitInBatches(ops);
+    await userDoc().set({name:user.displayName||"", lastSeen:Date.now()},{merge:true});
+    await saveUnlocked(); await idb.set("kv",UK("runs"),runs).catch(()=>{});
+    if(fromCloud){ ways.forEach(drawWay); }
+    updateStats();
+    if(dirty.size) await cloudFlush(); else setSync("ok");
+  }catch(e){ console.warn("synk",e); setSync("err"); }
+}
+async function cloudReset(){
+  if(!uid) return;
+  const ops=[]; for(let c=0;c<NCH;c++) ops.push(b=>b.delete(chunkDoc(c)));
+  const rs=await userDoc().collection("runs").get(); rs.forEach(d=>ops.push(b=>b.delete(d.ref)));
+  await commitInBatches(ops);
+}
+async function cloudPushAll(){ if(!uid) return; for(let c=0;c<NCH;c++) dirty.add(c); await cloudFlush(); await commitInBatches(runs.map(r=>b=>b.set(runDoc(r.id), encRun(r)))).catch(e=>console.warn(e)); }
+
+async function loadUserData(){
+  unlocked=new Map(); totalUnlocked=0; runs=[];
+  // data fra før innlogging fantes, flyttes til første konto som logger inn på denne telefonen
+  let u=await idb.get("kv",UK("unlocked")).catch(()=>null), r=await idb.get("kv",UK("runs")).catch(()=>null);
+  if(!u && !r){
+    const lu=await idb.get("kv","unlocked").catch(()=>null), lr=await idb.get("kv","runs").catch(()=>null);
+    if((lu&&Object.keys(lu).length)||(lr&&lr.length)){ u=lu; r=lr; await idb.set("kv","unlocked",{}).catch(()=>{}); await idb.set("kv","runs",[]).catch(()=>{}); }
+  }
+  if(u){ unlocked=new Map(Object.entries(u)); unlocked.forEach(v=>totalUnlocked+=uLen(v)); }
+  runs=r||[];
+  const draft=await idb.get("kv",UK("draft")).catch(()=>null);
+  if(draft && draft.dist>=100){
+    const rr={id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",type:draft.type||"run",pts:thin(draft.pts||[])};
+    runs.unshift(rr); await idb.set("kv",UK("runs"),runs); await idb.set("kv",UK("draft"),null); cloudSaveRun(rr);
+    toast("En avbrutt tur ble lagret");
+  }
+  await saveUnlocked();
+  ways.forEach(drawWay); updateStats();
+}
+function showLogin(msg){ $("login").hidden=false; $("login-err").textContent=msg||""; }
+async function signIn(){
+  $("login-err").textContent="";
+  const prov=new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
+  try{ await fbAuth.signInWithPopup(prov); }
+  catch(e){
+    if(["auth/popup-blocked","auth/operation-not-supported-in-this-environment","auth/web-storage-unsupported"].includes(e.code)){
+      try{ await fbAuth.signInWithRedirect(prov); return; }catch(e2){ e=e2; }
+    }
+    if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request") return;
+    console.warn(e); showLogin("Innloggingen virket ikke. Prøv igjen.");
+  }
+}
+function initCloud(onReady){
+  firebase.initializeApp(FB_CFG);
+  fbAuth=firebase.auth(); db=firebase.firestore();
+  fbAuth.getRedirectResult().catch(e=>{ console.warn(e); showLogin("Innloggingen virket ikke. Prøv igjen."); });
+  fbAuth.onAuthStateChanged(async u=>{
+    if(!u){ uid=null; user=null; showLogin(); return; }
+    const first = !uid; uid=u.uid; user=u; $("login").hidden=true;
+    $("acct-name").textContent = u.displayName || "Innlogget";
+    $("acct-mail").textContent = u.email || "";
+    if(first){ await loadUserData(); onReady(); reconcile(); }
+  });
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") cloudFlush(); });
+}
+
 /* ---------- Oppstart ---------- */
 (async function boot(){
-  try{
-    const u=await idb.get("kv","unlocked"); if(u){ unlocked=new Map(Object.entries(u)); unlocked.forEach(v=>totalUnlocked+=uLen(v)); }
-    runs=(await idb.get("kv","runs"))||[];
-    stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==3) stats=null; if(stats) prepBB();
-    const draft=await idb.get("kv","draft");
-    if(draft && draft.dist>=100){
-      runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",type:draft.type||"run",pts:thin(draft.pts||[])});
-      await idb.set("kv","runs",runs); await idb.set("kv","draft",null);
-      toast("En avbrutt tur ble lagret");
-    }
-  }catch(e){ console.warn(e); }
-  setRunUI(); updateStats(); sheetH();
-  startWatch(); loadView();
+  try{ stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==3) stats=null; if(stats) prepBB(); }catch{}
+  setRunUI(); updateStats(); sheetH(); loadView();
+  $("btn-google").onclick=signIn;
+  $("m-logout").onclick=async()=>{ if(run){ showChip("Avslutt turen før du logger ut.",3000); return; } await cloudFlush(); await fbAuth.signOut(); location.reload(); };
+  if(typeof firebase==="undefined"){ showLogin("Fikk ikke lastet innloggingen. Sjekk nettet og last siden på nytt."); return; }
+  initCloud(()=>{ startWatch(); });
   if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
 </script>
