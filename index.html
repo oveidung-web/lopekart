@@ -456,7 +456,7 @@ function processTile(tx,ty,buf){
     if(f.type!==2) continue;
     const p=f.props, cls=String(p.class||"");
     if(SKIP_CLASS.test(cls)) continue;
-    if(p.brunnel==="tunnel" && CAR_CLASS.test(cls)) continue;   // biltunneler
+    if(p.brunnel==="tunnel" && cls!=="path") continue;   // tunneler, unntatt gang- og sykkeltunneler
     if(p.service && SKIP_SERVICE.test(p.service)) continue;
     if(p.access==="no" || p.indoor===1) continue;
     let part=0;
@@ -508,7 +508,7 @@ function loadCell(id){
   if(loadedCells.has(id)) return Promise.resolve();
   if(pendingCells.has(id)) return pendingCells.get(id);
   const p=(async()=>{
-    const cached=await idb.get("cells","t1:"+id).catch(()=>null);
+    const cached=await idb.get("cells","t2:"+id).catch(()=>null);
     if(cached){ ingest(cached); loadedCells.add(id); return; }
     await slot(async()=>{
       setBusy(1);
@@ -516,7 +516,7 @@ function loadCell(id){
         const [tx,ty]=id.split("_").map(Number);
         const buf=await fetchTile(tx,ty);
         const list=buf.length? processTile(tx,ty,buf) : [];
-        await idb.set("cells","t1:"+id,list).catch(()=>{});
+        await idb.set("cells","t2:"+id,list).catch(()=>{});
         ingest(list); loadedCells.add(id);
       } finally { setBusy(-1); }
     });
@@ -879,7 +879,7 @@ async function buildStats(onProg){
   }catch(e){ stats=old; if(stats) prepBB(); throw e; }
   by.forEach(b=>b.m=Math.round(b.m));
   for(const k in streetsM) streetsM[k]=Math.round(streetsM[k]);
-  stats={v:1, built:Date.now(), by, s:streetsM}; prepBB();
+  stats={v:2, built:Date.now(), by, s:streetsM}; prepBB();
   await idb.set("kv","stats",stats).catch(()=>{});
 }
 
@@ -968,7 +968,7 @@ $("m-reset").onclick=async()=>{
   try{
     const u=await idb.get("kv","unlocked"); if(u){ unlocked=new Map(Object.entries(u)); unlocked.forEach(v=>totalUnlocked+=uLen(v)); }
     runs=(await idb.get("kv","runs"))||[];
-    stats=(await idb.get("kv","stats"))||null; if(stats) prepBB();
+    stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==2) stats=null; if(stats) prepBB();
     const draft=await idb.get("kv","draft");
     if(draft && draft.dist>=100){
       runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",pts:thin(draft.pts||[])});
