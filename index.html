@@ -440,8 +440,19 @@ function processTile(tx,ty,buf){
   const toLL=(gx,gy)=>[ +(Math.atan(Math.sinh(Math.PI*(1-2*gy/N)))*180/Math.PI).toFixed(6), +(gx/N*360-180).toFixed(6) ];
   // navn: rutenett over navnelinjer
   const G=128, grid=new Map(), tn=L.transportation_name;
+  // tunneler: navnelinjer som ligger oppå en tunnel skal ikke gi navn til veier over
+  const tgrid=new Map();
+  for(const f of tr.features){ if(f.props.brunnel!=="tunnel"||f.props.class==="path") continue;
+    for(const ln of f.lines) for(let i=0;i<ln.length-1;i++){ const a=ln[i], b=ln[i+1];
+      const k=`${Math.floor((a[0]+b[0])/2/G)}_${Math.floor((a[1]+b[1])/2/G)}`; let arr=tgrid.get(k); if(!arr){arr=[];tgrid.set(k,arr);} arr.push([a,b]); } }
+  function onTunnel(px,py){ const gx=Math.floor(px/G), gy=Math.floor(py/G);
+    for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(const [a,b] of tgrid.get(`${gx+dx}_${gy+dy}`)||[]){
+      const vx=b[0]-a[0], vy=b[1]-a[1], l=vx*vx+vy*vy; let t=l?((px-a[0])*vx+(py-a[1])*vy)/l:0; t=Math.max(0,Math.min(1,t));
+      const ex=a[0]+t*vx-px, ey=a[1]+t*vy-py; if(ex*ex+ey*ey<25) return true; }
+    return false; }
   if(tn){ for(const f of tn.features){ const nm=f.props.name||f.props["name:latin"]; if(!nm) continue;
     for(const ln of f.lines) for(let i=0;i<ln.length-1;i++){ const a=ln[i], b=ln[i+1];
+      if(tgrid.size && onTunnel((a[0]+b[0])/2,(a[1]+b[1])/2)) continue;
       const k=`${Math.floor((a[0]+b[0])/2/G)}_${Math.floor((a[1]+b[1])/2/G)}`; let arr=grid.get(k); if(!arr){arr=[];grid.set(k,arr);} arr.push([a,b,nm]); } } }
   function nameAt(px,py){
     let best="", bd=40*40; const gx=Math.floor(px/G), gy=Math.floor(py/G);
@@ -508,7 +519,7 @@ function loadCell(id){
   if(loadedCells.has(id)) return Promise.resolve();
   if(pendingCells.has(id)) return pendingCells.get(id);
   const p=(async()=>{
-    const cached=await idb.get("cells","t2:"+id).catch(()=>null);
+    const cached=await idb.get("cells","t3:"+id).catch(()=>null);
     if(cached){ ingest(cached); loadedCells.add(id); return; }
     await slot(async()=>{
       setBusy(1);
@@ -516,7 +527,7 @@ function loadCell(id){
         const [tx,ty]=id.split("_").map(Number);
         const buf=await fetchTile(tx,ty);
         const list=buf.length? processTile(tx,ty,buf) : [];
-        await idb.set("cells","t2:"+id,list).catch(()=>{});
+        await idb.set("cells","t3:"+id,list).catch(()=>{});
         ingest(list); loadedCells.add(id);
       } finally { setBusy(-1); }
     });
@@ -879,7 +890,7 @@ async function buildStats(onProg){
   }catch(e){ stats=old; if(stats) prepBB(); throw e; }
   by.forEach(b=>b.m=Math.round(b.m));
   for(const k in streetsM) streetsM[k]=Math.round(streetsM[k]);
-  stats={v:2, built:Date.now(), by, s:streetsM}; prepBB();
+  stats={v:3, built:Date.now(), by, s:streetsM}; prepBB();
   await idb.set("kv","stats",stats).catch(()=>{});
 }
 
@@ -968,7 +979,7 @@ $("m-reset").onclick=async()=>{
   try{
     const u=await idb.get("kv","unlocked"); if(u){ unlocked=new Map(Object.entries(u)); unlocked.forEach(v=>totalUnlocked+=uLen(v)); }
     runs=(await idb.get("kv","runs"))||[];
-    stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==2) stats=null; if(stats) prepBB();
+    stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==3) stats=null; if(stats) prepBB();
     const draft=await idb.get("kv","draft");
     if(draft && draft.dist>=100){
       runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",pts:thin(draft.pts||[])});
