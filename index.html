@@ -211,9 +211,7 @@ const UNLOCK_RADIUS = 18;       // meter fra veien
 const MAX_ACCURACY = 35;        // dårligere GPS-fix ignoreres
 const PIECE_LEN = 15;           // veier deles i biter på maks 15 m
 const MAX_SPEED = 7;            // m/s (~25 km/t)
-const CELL_LAT = 0.01, CELL_LON = 0.02;      // ~1,1 x 1,1 km i Bergen
 const BUCKET_LAT = 0.0005, BUCKET_LON = 0.001;
-const OVERPASS = ["https://overpass-api.de/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
 const START = [60.3913, 5.3221]; // Bergen sentrum, brukes til GPS svarer
 
 /* ---------- Hjelpere ---------- */
@@ -232,7 +230,6 @@ const lerp = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
 const fmtKm = m => (m/1000).toLocaleString("nb-NO",{minimumFractionDigits: m<10000?2:1, maximumFractionDigits: m<10000?2:1});
 function fmtTime(s){ s=Math.round(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; }
 function fmtPace(sec, m){ if(m<50) return "–:–"; const p=sec/(m/1000); if(p>3600) return "–:–"; return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,"0")}`; }
-const cellId = (lat,lon) => `${Math.floor(lat/CELL_LAT)}_${Math.floor(lon/CELL_LON)}`;
 const bucketId = (lat,lon) => `${Math.floor(lat/BUCKET_LAT)}_${Math.floor(lon/BUCKET_LON)}`;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
@@ -266,11 +263,11 @@ let unlocked = new Map();    // pid -> lengde i meter
 let runs = [];               // fullførte turer
 let totalUnlocked = 0;
 const loadedCells = new Set();
-const pendingCells = new Map(); // cellId -> promise
+const pendingCells = new Map(); // flis -> promise
 
 /* ---------- Kart ---------- */
 const map = L.map("map",{zoomControl:false, preferCanvas:true, attributionControl:true}).setView(START, 15);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Veier: <a href="https://openfreemap.org">OpenFreeMap</a> © OpenMapTiles'}).addTo(map);
 const renderer = L.canvas({padding:0.3});
 const lockedLayer = L.layerGroup().addTo(map);
 const openLayer = L.layerGroup().addTo(map);
@@ -329,79 +326,201 @@ function ingest(list){
     ways.set(w.id,w); drawWay(w);
   }
 }
-let epStart = 0;
-async function fetchOverpass(s,w,n,e){
-  const q = `[out:json][timeout:40];way["highway"]["highway"!~"^(motorway|motorway_link|construction|proposed|raceway|bus_guideway|platform|elevator|corridor|abandoned|razed|via_ferrata)$"]["service"!~"^(driveway|parking_aisle|drive-through)$"]["access"!~"^(private|no)$"]["area"!="yes"](${s},${w},${n},${e});out geom;`;
-  let lastErr;
-  for(let attempt=0; attempt<8; attempt++){
-    const url = OVERPASS[(epStart + attempt) % OVERPASS.length];
-    const ac = new AbortController(); const tm = setTimeout(()=>ac.abort(), 35000);
-    try{
-      const r = await fetch(url,{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}, signal:ac.signal});
-      if(!r.ok) throw new Error("HTTP "+r.status);
-      const j = await r.json();
-      epStart = (epStart + attempt) % OVERPASS.length; // husk serveren som svarte
-      return j;
-    }catch(err){
-      lastErr=err;
-      if(attempt>=1) showChip("Veidataene svarer tregt nå. Prøver en annen server…");
-      await sleep(Math.min(15000, 1500*(attempt+1)));
-    } finally { clearTimeout(tm); }
-  }
-  throw lastErr;
+/* Veier hentes fra OpenFreeMap sine vektorfliser (OpenStreetMap-data, zoom 14). */
+const TZ = 14;
+const TILEJSON = "https://tiles.openfreemap.org/planet";
+const TILE_FALLBACK = "https://tiles.openfreemap.org/planet/20261101_080013_pt/{z}/{x}/{y}.pbf";
+let tileTemplate = null;
+async function getTemplate(force){
+  if(tileTemplate && !force) return tileTemplate;
+  if(!force){ try{ const s=localStorage.getItem("lk_tiles"); if(s){ tileTemplate=s; refreshTemplate(); return s; } }catch{} }
+  return refreshTemplate();
 }
+async function refreshTemplate(){
+  try{ const j=await fetch(TILEJSON,{cache:"no-cache"}).then(r=>r.json()); if(j.tiles&&j.tiles[0]){ tileTemplate=j.tiles[0]; try{localStorage.setItem("lk_tiles",tileTemplate);}catch{} } }catch{}
+  return tileTemplate || (tileTemplate=TILE_FALLBACK);
+}
+
+/* --- Minimal MVT-dekoder (protobuf) --- */
+const utf8 = new TextDecoder();
+function PB(b){ this.b=b; this.p=0; this.dv=new DataView(b.buffer,b.byteOffset,b.byteLength); }
+PB.prototype.v=function(){ let r=0,m=1,c; do{ c=this.b[this.p++]; r+=(c&0x7f)*m; m*=128; }while(c&0x80); return r; };
+PB.prototype.skip=function(w){ if(w===0) this.v(); else if(w===1) this.p+=8; else if(w===2){ const l=this.v(); this.p+=l; } else if(w===5) this.p+=4; else throw new Error("wire "+w); };
+PB.prototype.bytes=function(){ const l=this.v(); const s=this.p; this.p+=l; return this.b.subarray(s,s+l); };
+const zz = n => (n%2) ? -(n+1)/2 : n/2;
+function decodeTile(buf, wanted){
+  const pb=new PB(buf), out={};
+  while(pb.p<buf.length){
+    const t=pb.v(), f=Math.floor(t/8), w=t&7;
+    if(f!==3){ pb.skip(w); continue; }
+    const lb=pb.bytes(), lp=new PB(lb);
+    let name="", extent=4096; const keys=[], vals=[], feats=[];
+    while(lp.p<lb.length){
+      const t2=lp.v(), f2=Math.floor(t2/8), w2=t2&7;
+      if(f2===1) name=utf8.decode(lp.bytes());
+      else if(f2===2) feats.push(lp.bytes());
+      else if(f2===3) keys.push(utf8.decode(lp.bytes()));
+      else if(f2===4){
+        const vb=lp.bytes(), vp=new PB(vb); let val=null;
+        while(vp.p<vb.length){
+          const t3=vp.v(), f3=Math.floor(t3/8), w3=t3&7;
+          if(f3===1) val=utf8.decode(vp.bytes());
+          else if(f3===2){ val=vp.dv.getFloat32(vp.p,true); vp.p+=4; }
+          else if(f3===3){ val=vp.dv.getFloat64(vp.p,true); vp.p+=8; }
+          else if(f3===4||f3===5) val=vp.v();
+          else if(f3===6) val=zz(vp.v());
+          else if(f3===7) val=!!vp.v();
+          else vp.skip(w3);
+        }
+        vals.push(val);
+      }
+      else if(f2===5) extent=lp.v();
+      else lp.skip(w2);
+    }
+    if(!wanted.includes(name)) continue;
+    const features=[];
+    for(const fb of feats){
+      const fp=new PB(fb); let type=0, tags=[], geom=[];
+      while(fp.p<fb.length){
+        const t4=fp.v(), f4=Math.floor(t4/8), w4=t4&7;
+        if(f4===2||f4===4){ const pk=fp.bytes(), pp=new PB(pk), arr=[]; while(pp.p<pk.length) arr.push(pp.v()); if(f4===2) tags=arr; else geom=arr; }
+        else if(f4===3) type=fp.v();
+        else fp.skip(w4);
+      }
+      const props={}; for(let i=0;i<tags.length;i+=2) props[keys[tags[i]]]=vals[tags[i+1]];
+      // geometri -> linjer
+      const lines=[]; let x=0,y=0,cur=null;
+      for(let i=0;i<geom.length;){
+        const cmd=geom[i++], id=cmd&7, cnt=cmd>>3;
+        if(id===1||id===2){ for(let k=0;k<cnt;k++){ x+=zz(geom[i++]); y+=zz(geom[i++]); if(id===1){ cur=[[x,y]]; lines.push(cur); } else cur.push([x,y]); } }
+      }
+      features.push({type,props,lines});
+    }
+    out[name]={extent,features};
+  }
+  return out;
+}
+
+/* --- Fliser -> veier i appens format --- */
+const SKIP_CLASS = /^(motorway|ferry|rail|transit|aerialway|raceway|busway|bus_guideway)$|_construction$/;
+const CAR_CLASS = /^(motorway|trunk|primary|secondary|tertiary)$/;
+const SKIP_SERVICE = /^(driveway|parking_aisle|drive_through|drive-through|spur|yard|siding|crossover)$/;
+function clipSeg(x0,y0,x1,y1,E){ // Liang-Barsky mot [0,E]
+  let t0=0,t1=1; const dx=x1-x0, dy=y1-y0;
+  const ps=[-dx,dx,-dy,dy], qs=[x0,E-x0,y0,E-y0];
+  for(let i=0;i<4;i++){ const p=ps[i], q=qs[i]; if(p===0){ if(q<0) return null; } else { const r=q/p; if(p<0){ if(r>t1) return null; if(r>t0) t0=r; } else { if(r<t0) return null; if(r<t1) t1=r; } } }
+  return [t0,t1];
+}
+function processTile(tx,ty,buf){
+  const L=decodeTile(buf,["transportation","transportation_name"]);
+  const tr=L.transportation; if(!tr) return [];
+  const E=tr.extent, N=E*2**TZ;
+  const toLL=(gx,gy)=>[ +(Math.atan(Math.sinh(Math.PI*(1-2*gy/N)))*180/Math.PI).toFixed(6), +(gx/N*360-180).toFixed(6) ];
+  // navn: rutenett over navnelinjer
+  const G=128, grid=new Map(), tn=L.transportation_name;
+  if(tn){ for(const f of tn.features){ const nm=f.props.name||f.props["name:latin"]; if(!nm) continue;
+    for(const ln of f.lines) for(let i=0;i<ln.length-1;i++){ const a=ln[i], b=ln[i+1];
+      const k=`${Math.floor((a[0]+b[0])/2/G)}_${Math.floor((a[1]+b[1])/2/G)}`; let arr=grid.get(k); if(!arr){arr=[];grid.set(k,arr);} arr.push([a,b,nm]); } } }
+  function nameAt(px,py){
+    let best="", bd=40*40; const gx=Math.floor(px/G), gy=Math.floor(py/G);
+    for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(const [a,b,nm] of grid.get(`${gx+dx}_${gy+dy}`)||[]){
+      const vx=b[0]-a[0], vy=b[1]-a[1], l=vx*vx+vy*vy; let t=l?((px-a[0])*vx+(py-a[1])*vy)/l:0; t=Math.max(0,Math.min(1,t));
+      const ex=a[0]+t*vx-px, ey=a[1]+t*vy-py, d=ex*ex+ey*ey; if(d<bd){ bd=d; best=nm; } }
+    return best;
+  }
+  const out=[]; let fi=0;
+  for(const f of tr.features){
+    fi++;
+    if(f.type!==2) continue;
+    const p=f.props, cls=String(p.class||"");
+    if(SKIP_CLASS.test(cls)) continue;
+    if(p.brunnel==="tunnel" && CAR_CLASS.test(cls)) continue;   // biltunneler
+    if(p.service && SKIP_SERVICE.test(p.service)) continue;
+    if(p.access==="no" || p.indoor===1) continue;
+    let part=0;
+    for(const ln of f.lines){
+      let cur=null; const polys=[];
+      for(let i=0;i<ln.length-1;i++){
+        const [x0,y0]=ln[i], [x1,y1]=ln[i+1];
+        const c=clipSeg(x0,y0,x1,y1,E); if(!c){ cur=null; continue; }
+        const A=[Math.round(x0+(x1-x0)*c[0]), Math.round(y0+(y1-y0)*c[0])], B=[Math.round(x0+(x1-x0)*c[1]), Math.round(y0+(y1-y0)*c[1])];
+        if(A[0]===B[0]&&A[1]===B[1]) continue;
+        if(cur && c[0]===0) cur.push(B); else { cur=[A,B]; polys.push(cur); }
+        if(c[1]!==1) cur=null;
+      }
+      for(const poly of polys){
+        if(poly.length<2) continue;
+        const mid=poly[Math.floor(poly.length/2)];
+        const c=[], d=[];
+        for(const [px,py] of poly){ const gx=tx*E+px, gy=ty*E+py; const ll=toLL(gx,gy); c.push(ll[0],ll[1]); d.push(gx*67108864+gy); }
+        out.push({i:`${tx}/${ty}:${fi}:${part++}`, h:p.subclass||cls, n:nameAt(mid[0],mid[1]), c, d});
+      }
+    }
+  }
+  return out;
+}
+
 let busy = 0;
-function setBusy(d){ busy+=d; const c=$("chip"); if(busy>0){ c.textContent="Henter veier…"; c.hidden=false; } else if(c.textContent==="Henter veier…"||c.textContent.startsWith("Veidataene")) c.hidden=true; }
-let queue = Promise.resolve();
+function setBusy(d){ busy+=d; const c=$("chip"); if(busy>0){ c.textContent="Henter veier…"; c.hidden=false; } else if(c.textContent==="Henter veier…") c.hidden=true; }
+// maks 4 nedlastinger samtidig
+let active=0; const waiting=[];
+async function slot(fn){ if(active>=4) await new Promise(r=>waiting.push(r)); active++; try{ return await fn(); } finally { active--; waiting.shift()?.(); } }
+async function fetchTile(tx,ty){
+  for(let attempt=0; attempt<3; attempt++){
+    const tpl = await getTemplate(attempt>0);
+    const url = tpl.replace("{z}",TZ).replace("{x}",tx).replace("{y}",ty);
+    const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),30000);
+    try{
+      const r=await fetch(url,{signal:ac.signal});
+      if(r.status===204) return new Uint8Array(0);
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      let buf=new Uint8Array(await r.arrayBuffer());
+      if(buf[0]===0x1f && buf[1]===0x8b && "DecompressionStream" in window)
+        buf=new Uint8Array(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+      return buf;
+    }catch(e){ if(attempt===2) throw e; await sleep(2000*(attempt+1)); }
+    finally{ clearTimeout(tm); }
+  }
+}
 function loadCell(id){
   if(loadedCells.has(id)) return Promise.resolve();
   if(pendingCells.has(id)) return pendingCells.get(id);
-  const p = (async()=>{
-    const cached = await idb.get("cells","v2:"+id).catch(()=>null);
+  const p=(async()=>{
+    const cached=await idb.get("cells","t1:"+id).catch(()=>null);
     if(cached){ ingest(cached); loadedCells.add(id); return; }
-    // én forespørsel om gangen mot Overpass
-    const job = queue.then(async()=>{
+    await slot(async()=>{
       setBusy(1);
       try{
-        const [cy,cx]=id.split("_").map(Number);
-        const s=(cy*CELL_LAT).toFixed(5), w=(cx*CELL_LON).toFixed(5), n=((cy+1)*CELL_LAT).toFixed(5), e=((cx+1)*CELL_LON).toFixed(5);
-        const data = await fetchOverpass(s,w,n,e);
-        const list = [];
-        for(const el of data.elements||[]){
-          if(el.type!=="way"||!el.geometry||!el.nodes||el.geometry.length<2) continue;
-          const tg=el.tags||{};
-          if(tg.tunnel && tg.tunnel!=="no" && /^(trunk|primary|secondary|tertiary)(_link)?$/.test(tg.highway||"")) continue; // biltunneler
-          const c=[]; for(const g of el.geometry) c.push(+g.lat.toFixed(6), +g.lon.toFixed(6));
-          list.push({i:el.id, h:el.tags?.highway||"", n:el.tags?.name||"", c, d:el.nodes});
-        }
-        await idb.set("cells","v2:"+id,list).catch(()=>{});
+        const [tx,ty]=id.split("_").map(Number);
+        const buf=await fetchTile(tx,ty);
+        const list=buf.length? processTile(tx,ty,buf) : [];
+        await idb.set("cells","t1:"+id,list).catch(()=>{});
         ingest(list); loadedCells.add(id);
       } finally { setBusy(-1); }
     });
-    queue = job.catch(()=>{});
-    await job;
-  })().catch(err=>{ console.warn("celle",id,err); showChip("Fikk ikke hentet veier nå. Prøver igjen om litt.",5000); }).finally(()=>pendingCells.delete(id));
+  })().catch(err=>{ console.warn("flis",id,err); showChip("Fikk ikke hentet veier nå. Prøver igjen om litt.",5000); }).finally(()=>pendingCells.delete(id));
   pendingCells.set(id,p);
   return p;
 }
+const lon2tx = lon => Math.floor((lon+180)/360*2**TZ);
+const lat2ty = lat => { const r=lat*Math.PI/180; return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**TZ); };
+function tileCenter(id){ const [tx,ty]=id.split("_").map(Number), n=2**TZ; const lon=(tx+.5)/n*360-180; const lat=Math.atan(Math.sinh(Math.PI*(1-2*(ty+.5)/n)))*180/Math.PI; return [lat,lon]; }
 function cellsInBounds(s,w,n,e){
   const out=[];
-  for(let y=Math.floor(s/CELL_LAT); y<=Math.floor(n/CELL_LAT); y++)
-    for(let x=Math.floor(w/CELL_LON); x<=Math.floor(e/CELL_LON); x++) out.push(`${y}_${x}`);
+  for(let ty=lat2ty(n); ty<=lat2ty(s); ty++) for(let tx=lon2tx(w); tx<=lon2tx(e); tx++) out.push(`${tx}_${ty}`);
   return out;
 }
 function loadView(){
   if(map.getZoom()<14) return;
-  const b=map.getBounds();
+  const b=map.getBounds(), c=map.getCenter();
   const ids=cellsInBounds(b.getSouth(),b.getWest(),b.getNorth(),b.getEast());
-  const c=map.getCenter();
-  ids.sort((p,q)=>{ const d=id=>{const [y,x]=id.split("_").map(Number); return Math.hypot((y+.5)*CELL_LAT-c.lat,((x+.5)*CELL_LON-c.lng)/2);}; return d(p)-d(q); });
+  ids.sort((p,q)=>dist(tileCenter(p),[c.lat,c.lng])-dist(tileCenter(q),[c.lat,c.lng]));
   ids.slice(0,12).forEach(loadCell);
 }
-function cellsAround(lat,lon){ return cellsInBounds(lat-CELL_LAT*.6, lon-CELL_LON*.6, lat+CELL_LAT*.6, lon+CELL_LON*.6); }
+function cellsAround(lat,lon){ const r=400; return cellsInBounds(lat-r/mPerLat, lon-r/mPerLon(lat), lat+r/mPerLat, lon+r/mPerLon(lat)); }
 
 /* ---------- Opplåsing ---------- */
-let saveTimer=null;
+let saveTimer=null; const announced=new Set();
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveUnlocked,2500); }
 async function saveUnlocked(){ clearTimeout(saveTimer); await idb.set("kv","unlocked",Object.fromEntries(unlocked)).catch(()=>{}); }
 function unlockAt(p, touched){
@@ -436,7 +555,7 @@ function afterUnlock(touched, announce){
     const w=ways.get(wid); if(!w) continue;
     const before = wayOpen.has(wid);
     drawWay(w);
-    if(!before && w.name && announce) fresh.push(w.name);
+    if(!before && w.name && announce && !announced.has(w.name)){ announced.add(w.name); fresh.push(w.name); }
   }
   scheduleSave(); updateStats();
   if(fresh.length) toast(`Låst opp: ${[...new Set(fresh)].slice(0,2).join(", ")}`);
@@ -554,7 +673,7 @@ function setRunUI(){
 async function startRun(){
   startWatch();
   run={start:Date.now(), active:true, elapsed:0, lastResume:Date.now(), dist:0, newM:0, pts:[], last:null};
-  trackLayer.clearLayers();
+  trackLayer.clearLayers(); announced.clear();
   runLine=L.polyline([],{renderer,color:colors.run,weight:3,opacity:.8,interactive:false}).addTo(trackLayer);
   follow=true; $("btn-locate").classList.add("on");
   if(me) map.setView(me,Math.max(map.getZoom(),16));
@@ -643,7 +762,7 @@ async function importGpx(files){
     if(runs.some(r=>r.id===id)){ skipped++; continue; }
     // last veier langs ruten
     const cells=new Set(); for(const p of pts){ for(const c of cellsInBounds(p[0]-.002,p[1]-.004,p[0]+.002,p[1]+.004)) cells.add(c); }
-    if(cells.size>150){ skipped++; continue; } // trolig ikke en løpetur
+    if(cells.size>200){ skipped++; continue; } // trolig ikke en løpetur
     await Promise.all([...cells].map(loadCell));
     const touched=new Set(); let d=0, newM=0;
     for(let i=1;i<pts.length;i++){
