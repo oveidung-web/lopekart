@@ -200,7 +200,7 @@ ol.steps li{margin:4px 0}
     <div class="list" style="margin-top:8px">
       <button class="row" id="m-overview"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><div class="t"><b>Oversikt</b><span>Bergen, bydeler og gater du har låst opp</span></div></button>
       <button class="row" id="m-history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><div class="t"><b>Turer</b><span>Løpeturer, gåturer og ruter</span></div></button>
-      <button class="row" id="m-import"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><div class="t"><b>Importer GPX</b><span>Fra Apple Watch / Helse, Strava, Garmin</span></div></button>
+      <button class="row" id="m-import"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><div class="t"><b>Importer turer</b><span>Eksport fra Apple Helse eller Strava, eller GPX-filer</span></div></button>
       <button class="row" id="m-help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg><div class="t"><b>Slik fungerer det</b><span>Og hvordan hente turer fra Apple Watch</span></div></button>
       <button class="row" id="m-export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><div class="t"><b>Ta sikkerhetskopi</b><span>Lagre fremgangen som fil</span></div></button>
       <button class="row" id="m-restore"><svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M5.5 15A7.5 7.5 0 0 0 19 17M18.5 9A7.5 7.5 0 0 0 5 7"/></svg><div class="t"><b>Gjenopprett fra fil</b><span>Henter inn en sikkerhetskopi</span></div></button>
@@ -234,14 +234,19 @@ ol.steps li{margin:4px 0}
     <p>Du må være innen ca. 18 meter fra veien, og GPS-en må være god nok. Over 25 km/t teller ikke, så sykkel og bil låser ikke opp noe.</p>
     <h3>Under turen</h3>
     <p>På iPhone stopper GPS-en i nettleseren når skjermen låses. Appen prøver å holde skjermen på selv, men sett gjerne Autolås til «Aldri» i Innstillinger → Skjerm og lysstyrke mens du løper, og skru ned lysstyrken.</p>
-    <h3>Turer fra Apple Watch</h3>
+    <h3>Turer fra Apple Watch (Helse)</h3>
     <ol class="steps">
       <li>Åpne Helse-appen, trykk på profilbildet øverst, og velg <b>Eksporter alle helsedata</b>.</li>
-      <li>Lagre filen i Filer. Trykk på zip-filen for å pakke den ut.</li>
-      <li>Rutene ligger i mappen <b>workout-routes</b> som .gpx-filer.</li>
-      <li>Velg <b>Importer GPX</b> her og merk alle filene du vil ha med.</li>
+      <li>Velg <b>Arkiver i Filer</b>. Det kan ta litt tid før filen er klar.</li>
+      <li>Velg <b>Importer turer</b> her og velg zip-filen. Du trenger ikke pakke den ut.</li>
     </ol>
-    <p class="sub">Turer som allerede er importert, hoppes over.</p>
+    <h3>Turer fra Strava</h3>
+    <ol class="steps">
+      <li>Logg inn på strava.com i nettleseren. Gå til <b>Innstillinger → Min konto → Last ned eller slett kontoen din</b>, og be om arkivet.</li>
+      <li>Strava sender en lenke på e-post. Last ned zip-filen.</li>
+      <li>Velg <b>Importer turer</b> her og velg zip-filen.</li>
+    </ol>
+    <p class="sub">Appen leser GPX- og TCX-filer. FIT-filer kan den ikke lese ennå, så noen Strava-turer kan bli hoppet over. Turer som allerede er importert, hoppes også over.</p>
     <h3>Lagring</h3>
     <p>Fremgangen lagres på telefonen og på kontoen din, så den følger med hvis du bytter telefon eller sletter nettleserdata. Bare du kan se turene dine.</p>
     <p class="sub">Kartdata © OpenStreetMap-bidragsytere.</p>
@@ -259,13 +264,14 @@ ol.steps li{margin:4px 0}
   </div>
 </div>
 
-<input type="file" id="f-gpx" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple hidden>
+<input type="file" id="f-gpx" accept=".zip,.gpx,.tcx,.gz,application/zip,application/gpx+xml,application/xml,text/xml" multiple hidden>
 <input type="file" id="f-restore" accept=".json,application/json" hidden>
 
 <script src="leaflet.js"></script>
 <script src="fb-app.js"></script>
 <script src="fb-auth.js"></script>
 <script src="fb-store.js"></script>
+<script src="fflate.js"></script>
 <script>
 "use strict";
 /* ---------- Konstanter ---------- */
@@ -840,11 +846,76 @@ function parseGpx(text){
   }
   return pts;
 }
-async function importGpx(files){
-  let done=0, added=0, skipped=0, gained=0;
+function parseTcx(text){
+  const doc=new DOMParser().parseFromString(text,"application/xml"), pts=[];
+  for(const tp of doc.getElementsByTagName("Trackpoint")){
+    const la=tp.getElementsByTagName("LatitudeDegrees")[0], lo=tp.getElementsByTagName("LongitudeDegrees")[0];
+    if(!la||!lo) continue;
+    const lat=parseFloat(la.textContent), lon=parseFloat(lo.textContent); if(!isFinite(lat)||!isFinite(lon)) continue;
+    const te=tp.getElementsByTagName("Time")[0]; const t=te?Date.parse(te.textContent):NaN;
+    pts.push([lat,lon,isFinite(t)?t:null]);
+  }
+  return pts;
+}
+const TRACK_RE=/\.(gpx|tcx)(\.gz)?$/i;
+const dec=new TextDecoder();
+function trackFromBytes(name, bytes, lastModified){
+  if(/\.gz$/i.test(name)){ bytes=fflate.gunzipSync(bytes); name=name.replace(/\.gz$/i,""); }
+  return {name, text:dec.decode(bytes), lastModified};
+}
+// Leser zip-filer bit for bit, så store eksporter fra Helse ikke fyller minnet
+async function readZip(file, out, stat){
+  await new Promise((resolve,reject)=>{
+    const uz=new fflate.Unzip(); uz.register(fflate.UnzipInflate);
+    let pending=0, ended=false;
+    const check=()=>{ if(ended && pending===0) resolve(); };
+    uz.onfile=f=>{
+      const n=f.name, base=n.split("/").pop();
+      if(n.includes("__MACOSX")||base.startsWith(".")) return;
+      if(/\.fit(\.gz)?$/i.test(n)){ stat.fit++; return; }
+      if(!TRACK_RE.test(n)) return;
+      pending++; const parts=[];
+      f.ondata=(err,dat,final)=>{
+        if(err){ pending--; check(); return; }
+        parts.push(dat);
+        if(final){
+          let len=0; parts.forEach(p=>len+=p.length); const all=new Uint8Array(len); let o=0; parts.forEach(p=>{ all.set(p,o); o+=p.length; });
+          try{ out.push(trackFromBytes(base, all, file.lastModified)); }catch{}
+          pending--; showChip(`Leser ${file.name}… ${out.length} turer funnet`); check();
+        }
+      };
+      f.start();
+    };
+    (async()=>{
+      try{
+        const rd=file.stream().getReader();
+        for(;;){ const {done,value}=await rd.read(); if(done){ uz.push(new Uint8Array(0),true); break; } uz.push(value); }
+        ended=true; check();
+      }catch(e){ reject(e); }
+    })();
+  });
+}
+async function collectTracks(files){
+  const out=[], stat={fit:0, bad:0};
   for(const f of files){
-    done++; showChip(`Importerer ${done} av ${files.length}…`);
-    let pts; try{ pts=parseGpx(await f.text()); }catch{ pts=[]; }
+    const n=f.name.toLowerCase();
+    try{
+      if(n.endsWith(".zip")){ showChip(`Leser ${f.name}…`); await readZip(f,out,stat); }
+      else if(TRACK_RE.test(n)) out.push(trackFromBytes(f.name, new Uint8Array(await f.arrayBuffer()), f.lastModified));
+      else if(/\.fit(\.gz)?$/.test(n)) stat.fit++;
+      else stat.bad++;
+    }catch(e){ console.warn(e); stat.bad++; }
+  }
+  return {tracks:out, stat};
+}
+async function importGpx(files){
+  showChip("Leser filer…");
+  const {tracks, stat}=await collectTracks(files);
+  if(!tracks.length){ $("chip").hidden=true; showChip(stat.fit?"Fant bare FIT-filer. Dem kan appen ikke lese ennå.":"Fant ingen turer med GPS-spor i filen.",5000); return; }
+  let done=0, added=0, skipped=0, gained=0;
+  for(const f of tracks){
+    done++; showChip(`Importerer ${done} av ${tracks.length}…`);
+    let pts; try{ pts=/\.tcx$/i.test(f.name)?parseTcx(f.text):parseGpx(f.text); }catch{ pts=[]; }
     if(pts.length<2){ skipped++; continue; }
     const start=pts[0][2]||f.lastModified;
     const id="gpx-"+start+"-"+pts.length;
@@ -870,7 +941,7 @@ async function importGpx(files){
   await idb.set("kv",UK("runs"),runs).catch(()=>{});
   await saveUnlocked(); cloudFlush(); updateStats();
   $("chip").hidden=true;
-  toast(`${added} tur${added===1?"":"er"} importert, ${fmtKm(gained)} km ny vei${skipped?` · ${skipped} hoppet over`:""}`);
+  toast(`${added} tur${added===1?"":"er"} importert, ${fmtKm(gained)} km ny vei${skipped?` · ${skipped} hoppet over`:""}${stat.fit?` · ${stat.fit} FIT-filer kan ikke leses ennå`:""}`);
 }
 
 /* ---------- Sikkerhetskopi ---------- */
