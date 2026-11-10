@@ -1112,22 +1112,34 @@ async function loadUserData(){
   ways.forEach(drawWay); updateStats();
 }
 function showLogin(msg){ $("login").hidden=false; $("login-err").textContent=msg||""; }
-async function signIn(){
+// Innlogging: Google sender svaret tilbake til appens egen adresse, så det virker også fra hjemskjermen på iPhone
+const GOOGLE_CLIENT_ID = "427431687299-pm5q7dmbtud927mgg60tlb3ga6v2tat3.apps.googleusercontent.com";
+const REDIRECT_URI = new URL("./", location.href).href;
+function rnd(){ const a=new Uint8Array(16); crypto.getRandomValues(a); return [...a].map(x=>x.toString(16).padStart(2,"0")).join(""); }
+function signIn(){
   $("login-err").textContent="";
-  const prov=new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
-  try{ await fbAuth.signInWithPopup(prov); }
-  catch(e){
-    if(["auth/popup-blocked","auth/operation-not-supported-in-this-environment","auth/web-storage-unsupported"].includes(e.code)){
-      try{ await fbAuth.signInWithRedirect(prov); return; }catch(e2){ e=e2; }
-    }
-    if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request") return;
-    console.warn(e); showLogin("Innloggingen virket ikke. Prøv igjen.");
-  }
+  const state=rnd(), nonce=rnd();
+  try{ localStorage.setItem("lk_oauth", JSON.stringify({state,nonce,t:Date.now()})); }catch{}
+  const q=new URLSearchParams({client_id:GOOGLE_CLIENT_ID, redirect_uri:REDIRECT_URI, response_type:"id_token", scope:"openid email profile", nonce, state, prompt:"select_account"});
+  location.assign("https://accounts.google.com/o/oauth2/v2/auth?"+q);
+}
+async function handleOAuthReturn(){
+  if(!/[#&](id_token|error)=/.test(location.hash)) return;
+  const h=new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null,"",location.pathname+location.search);
+  let saved=null; try{ saved=JSON.parse(localStorage.getItem("lk_oauth")||"null"); localStorage.removeItem("lk_oauth"); }catch{}
+  if(h.get("error")){ showLogin(h.get("error")==="access_denied"?"Innloggingen ble avbrutt.":"Innloggingen virket ikke. Prøv igjen."); return; }
+  const tok=h.get("id_token");
+  try{
+    const payload=JSON.parse(atob(tok.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+    if(!saved || h.get("state")!==saved.state || payload.nonce!==saved.nonce) throw new Error("state");
+    await fbAuth.signInWithCredential(firebase.auth.GoogleAuthProvider.credential(tok));
+  }catch(e){ console.warn(e); showLogin("Innloggingen virket ikke. Prøv igjen."); }
 }
 function initCloud(onReady){
   firebase.initializeApp(FB_CFG);
   fbAuth=firebase.auth(); db=firebase.firestore();
-  fbAuth.getRedirectResult().catch(e=>{ console.warn(e); showLogin("Innloggingen virket ikke. Prøv igjen."); });
+  handleOAuthReturn();
   fbAuth.onAuthStateChanged(async u=>{
     if(!u){ uid=null; user=null; showLogin(); return; }
     const first = !uid; uid=u.uid; user=u; $("login").hidden=true;
