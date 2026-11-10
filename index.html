@@ -19,7 +19,7 @@
 /* Layout: kart i full skjerm, flytende knapper oppe, statusark nede. */
 :root{
   --bg:#f3f4f2; --panel:#ffffff; --fg:#16191d; --muted:#6b727c; --line:#dfe2e0;
-  --accent:#ff6a13; --accent-fg:#ffffff; --locked:#7d8794; --run:#1f6fff; --danger:#d23a2a;
+  --accent:#ff6a13; --accent-fg:#ffffff; --locked:#4f5864; --run:#1f6fff; --danger:#d23a2a;
   --tile-filter:grayscale(.85) contrast(.9) brightness(1.04);
   --shadow:0 6px 24px rgba(20,25,30,.16);
   --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
@@ -28,7 +28,7 @@
 @media (prefers-color-scheme:dark){
   :root{
     --bg:#101317; --panel:#1a1e24; --fg:#eef0f2; --muted:#949ba5; --line:#2b3038;
-    --accent:#ff7a29; --accent-fg:#14100c; --locked:#6c7580; --run:#5b95ff; --danger:#ff6b5b;
+    --accent:#ff7a29; --accent-fg:#14100c; --locked:#a3acb8; --run:#5b95ff; --danger:#ff6b5b;
     --tile-filter:invert(1) hue-rotate(180deg) grayscale(.9) brightness(.72) contrast(1.1);
     --shadow:0 6px 24px rgba(0,0,0,.5);
     color-scheme:dark;
@@ -39,7 +39,7 @@
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.4 var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
 #map{position:fixed;inset:0;background:var(--bg)}
-.leaflet-tile-pane{filter:var(--tile-filter)}
+.leaflet-tile-pane{filter:var(--tile-filter);opacity:.55}
 .leaflet-container{background:var(--bg);font-family:var(--f-body)}
 .leaflet-control-attribution{font-size:10px;background:color-mix(in srgb,var(--panel) 75%,transparent)!important;color:var(--muted)}
 .leaflet-control-attribution a{color:var(--muted)}
@@ -282,7 +282,7 @@ const wayLocked = new Map(), wayOpen = new Map();
 
 function drawWay(w){
   if(!wayLocked.has(w.id)){
-    const pl = L.polyline(w.ll,{renderer, color:colors.locked, weight:2, opacity:.75, dashArray:"3 4", interactive:false});
+    const pl = L.polyline(w.ll,{renderer, color:colors.locked, weight:2.5, opacity:.9, dashArray:"4 4", interactive:false});
     wayLocked.set(w.id, pl); lockedLayer.addLayer(pl);
   }
   // sammenhengende opplåste biter
@@ -350,7 +350,7 @@ function loadCell(id){
   if(loadedCells.has(id)) return Promise.resolve();
   if(pendingCells.has(id)) return pendingCells.get(id);
   const p = (async()=>{
-    const cached = await idb.get("cells",id).catch(()=>null);
+    const cached = await idb.get("cells","v2:"+id).catch(()=>null);
     if(cached){ ingest(cached); loadedCells.add(id); return; }
     // én forespørsel om gangen mot Overpass
     const job = queue.then(async()=>{
@@ -362,10 +362,12 @@ function loadCell(id){
         const list = [];
         for(const el of data.elements||[]){
           if(el.type!=="way"||!el.geometry||!el.nodes||el.geometry.length<2) continue;
+          const tg=el.tags||{};
+          if(tg.tunnel && tg.tunnel!=="no" && /^(trunk|primary|secondary|tertiary)(_link)?$/.test(tg.highway||"")) continue; // biltunneler
           const c=[]; for(const g of el.geometry) c.push(+g.lat.toFixed(6), +g.lon.toFixed(6));
           list.push({i:el.id, h:el.tags?.highway||"", n:el.tags?.name||"", c, d:el.nodes});
         }
-        await idb.set("cells",id,list).catch(()=>{});
+        await idb.set("cells","v2:"+id,list).catch(()=>{});
         ingest(list); loadedCells.add(id);
       } finally { setBusy(-1); }
     });
