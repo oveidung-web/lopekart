@@ -73,6 +73,10 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--open);transition:width .6s}
 .go{display:flex;gap:10px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:12px;background:var(--line)}
+.seg button{border:0;border-radius:9px;padding:9px 10px;background:transparent;font:600 15px/1 var(--f-body);color:var(--muted);display:flex;align-items:center;justify-content:center;gap:7px}
+.seg button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .btn{flex:1;border:0;border-radius:14px;padding:15px 18px;font:700 20px/1 var(--f-display);text-transform:uppercase;letter-spacing:.06em}
 .btn.primary{background:var(--accent);color:var(--accent-fg)}
 .btn.stop{background:var(--fg);color:var(--bg)}
@@ -140,7 +144,7 @@ ol.steps li{margin:4px 0}
   <div class="stats" id="stats-idle">
     <div class="stat hl"><div class="v" id="s-total">0<small>km</small></div><div class="l">Låst opp totalt</div></div>
     <div class="stat"><div class="v" id="s-area">0<small>%</small></div><div class="l">Av veiene her</div></div>
-    <div class="stat"><div class="v" id="s-runs">0</div><div class="l">Løpeturer</div></div>
+    <div class="stat"><div class="v" id="s-runs">0</div><div class="l">Turer</div></div>
   </div>
   <div class="stats" id="stats-run" hidden>
     <div class="stat"><div class="v" id="r-dist">0,00<small>km</small></div><div class="l">Distanse</div></div>
@@ -148,6 +152,10 @@ ol.steps li{margin:4px 0}
     <div class="stat hl"><div class="v" id="r-new">0<small>m</small></div><div class="l">Ny vei</div></div>
   </div>
   <div class="bar" aria-hidden="true"><i id="area-bar"></i></div>
+  <div class="seg" id="seg-type" role="group" aria-label="Type tur">
+    <button id="t-run" aria-pressed="true"><svg viewBox="0 0 24 24"><circle cx="15" cy="4.5" r="2"/><path d="M8 21l3-6 3 2v4M6 12l3-4 4 1 3 3 3 1M10 15l-3-1"/></svg>Løpetur</button>
+    <button id="t-walk" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="2"/><path d="M10 21l2-6 2 2 1 4M9 10l3-2 2 3 3 1M12 8l-1 5-3 3"/></svg>Gåtur</button>
+  </div>
   <div class="go">
     <button class="btn primary" id="btn-start">Start løpetur</button>
     <button class="btn ghost" id="btn-pause" hidden>Pause</button>
@@ -162,7 +170,7 @@ ol.steps li{margin:4px 0}
     <p class="sub" id="menu-sum"></p>
     <div class="list" style="margin-top:8px">
       <button class="row" id="m-overview"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><div class="t"><b>Oversikt</b><span>Bergen, bydeler og gater du har låst opp</span></div></button>
-      <button class="row" id="m-history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><div class="t"><b>Løpeturer</b><span>Historikk og ruter</span></div></button>
+      <button class="row" id="m-history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><div class="t"><b>Turer</b><span>Løpeturer, gåturer og ruter</span></div></button>
       <button class="row" id="m-import"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><div class="t"><b>Importer GPX</b><span>Fra Apple Watch / Helse, Strava, Garmin</span></div></button>
       <button class="row" id="m-help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg><div class="t"><b>Slik fungerer det</b><span>Og hvordan hente turer fra Apple Watch</span></div></button>
       <button class="row" id="m-export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><div class="t"><b>Ta sikkerhetskopi</b><span>Lagre fremgangen som fil</span></div></button>
@@ -181,9 +189,9 @@ ol.steps li{margin:4px 0}
 </div>
 
 <div class="panel" id="p-history" hidden>
-  <div class="card" role="dialog" aria-label="Løpeturer">
+  <div class="card" role="dialog" aria-label="Turer">
     <button class="close" data-close aria-label="Lukk">✕</button>
-    <h2>Løpeturer</h2>
+    <h2>Turer</h2>
     <p class="sub">Trykk på en tur for å se ruten på kartet.</p>
     <div class="list" id="history-list"></div>
   </div>
@@ -195,7 +203,7 @@ ol.steps li{margin:4px 0}
     <h2>Slik fungerer det</h2>
     <p>Grå streker er veier og stier du ikke har løpt. Når du løper forbi, blir biten oransje og er låst opp for godt. Veiene hentes fra OpenStreetMap rundt der du er.</p>
     <p>Du må være innen ca. 18 meter fra veien, og GPS-en må være god nok. Over 25 km/t teller ikke, så sykkel og bil låser ikke opp noe.</p>
-    <h3>Under løpeturen</h3>
+    <h3>Under turen</h3>
     <p>På iPhone stopper GPS-en i nettleseren når skjermen låses. Appen prøver å holde skjermen på selv, men sett gjerne Autolås til «Aldri» i Innstillinger → Skjerm og lysstyrke mens du løper, og skru ned lysstyrken.</p>
     <h3>Turer fra Apple Watch</h3>
     <ol class="steps">
@@ -618,7 +626,7 @@ function updateStats(){
   $("s-runs").textContent = runs.length;
   clearTimeout(areaTimer);
   areaTimer=setTimeout(()=>{ const pct=areaCoverage()*100; $("s-area").innerHTML=`${pct<10?pct.toLocaleString("nb-NO",{maximumFractionDigits:1}):Math.round(pct)}<small>%</small>`; $("area-bar").style.width=Math.min(100,pct)+"%"; },150);
-  $("menu-sum").textContent = `${fmtKm(totalUnlocked)} km låst opp · ${runs.length} løpeturer · ${ways.size.toLocaleString("nb-NO")} veier lastet`;
+  $("menu-sum").textContent = `${fmtKm(totalUnlocked)} km låst opp · ${runs.length} turer · ${ways.size.toLocaleString("nb-NO")} veier lastet`;
 }
 let geoNameTimer=null;
 function updateAreaName(){
@@ -704,23 +712,30 @@ function renderRun(){
 }
 async function keepAwake(){ try{ if("wakeLock" in navigator && run?.active) wakeLock = await navigator.wakeLock.request("screen"); }catch{} }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") keepAwake(); });
+let actType="run";
+try{ if(localStorage.getItem("lk_type")==="walk") actType="walk"; }catch{}
+const TYPE_LABEL={run:"Løpetur", walk:"Gåtur"};
+function setType(t){ if(run) return; actType=t; try{localStorage.setItem("lk_type",t);}catch{} setRunUI(); }
+$("t-run").onclick=()=>setType("run"); $("t-walk").onclick=()=>setType("walk");
 function setRunUI(){
+  $("seg-type").hidden=!!run;
+  $("t-run").setAttribute("aria-pressed",actType==="run"); $("t-walk").setAttribute("aria-pressed",actType==="walk");
   const r=!!run;
   $("stats-idle").hidden=r; $("stats-run").hidden=!r; $("btn-pause").hidden=!r;
-  $("btn-start").textContent = r ? "Avslutt" : "Start løpetur";
+  $("btn-start").textContent = r ? `Avslutt ${TYPE_LABEL[run.type||"run"].toLowerCase()}` : `Start ${TYPE_LABEL[actType].toLowerCase()}`;
   $("btn-start").className = "btn " + (r ? "stop" : "primary");
   $("btn-pause").textContent = run && !run.active ? "Fortsett" : "Pause";
 }
 async function startRun(){
   startWatch();
-  run={start:Date.now(), active:true, elapsed:0, lastResume:Date.now(), dist:0, newM:0, pts:[], last:null};
+  run={type:actType, start:Date.now(), active:true, elapsed:0, lastResume:Date.now(), dist:0, newM:0, pts:[], last:null};
   trackLayer.clearLayers(); announced.clear();
   runLine=L.polyline([],{renderer,color:colors.run,weight:3,opacity:.8,interactive:false}).addTo(trackLayer);
   follow=true; $("btn-locate").classList.add("on");
   if(me) map.setView(me,Math.max(map.getZoom(),16));
   setRunUI(); renderRun(); keepAwake();
   runTick=setInterval(renderRun,1000);
-  showChip("Hold skjermen på mens du løper",3500);
+  showChip("Hold skjermen på under turen",3500);
   saveDraft();
 }
 function togglePause(){
@@ -736,9 +751,9 @@ async function stopRun(){
   clearInterval(runTick);
   const e=elapsed();
   if(run.dist>=100){
-    runs.unshift({id:"live-"+run.start, start:run.start, dur:Math.round(e), dist:Math.round(run.dist), newM:Math.round(run.newM), src:"live", pts:thin(run.pts)});
+    runs.unshift({id:"live-"+run.start, start:run.start, dur:Math.round(e), dist:Math.round(run.dist), newM:Math.round(run.newM), src:"live", type:run.type||"run", pts:thin(run.pts)});
     await idb.set("kv","runs",runs).catch(()=>{});
-    toast(`Lagret: ${fmtKm(run.dist)} km, ${Math.round(run.newM)} m ny vei`);
+    toast(`${TYPE_LABEL[run.type||"run"]} lagret: ${fmtKm(run.dist)} km, ${Math.round(run.newM)} m ny vei`);
   }
   run=null; try{wakeLock?.release();}catch{} wakeLock=null;
   await idb.set("kv","draft",null).catch(()=>{});
@@ -757,14 +772,14 @@ map.on("dragstart",()=>{ follow=false; $("btn-locate").classList.remove("on"); }
 /* ---------- Historikk ---------- */
 function renderHistory(){
   const el=$("history-list"); el.innerHTML="";
-  if(!runs.length){ el.innerHTML='<div class="empty">Ingen løpeturer ennå. Trykk «Start løpetur», eller importer GPX-filer fra Apple Watch.</div>'; return; }
+  if(!runs.length){ el.innerHTML='<div class="empty">Ingen turer ennå. Trykk «Start løpetur» eller «Start gåtur», eller importer GPX-filer fra Apple Watch.</div>'; return; }
   for(const r of runs){
     const b=document.createElement("button"); b.className="row";
     const d=new Date(r.start);
     const when=d.toLocaleDateString("nb-NO",{weekday:"short",day:"numeric",month:"short",year: d.getFullYear()!==new Date().getFullYear()?"numeric":undefined})+" "+d.toLocaleTimeString("nb-NO",{hour:"2-digit",minute:"2-digit"});
     b.innerHTML=`<div class="t"><b></b><span></span></div><div class="n"></div>`;
     b.querySelector("b").textContent=`${fmtKm(r.dist)} km · ${fmtTime(r.dur)}`;
-    b.querySelector("span").textContent=`${when} · ${fmtPace(r.dur,r.dist)}/km${r.src==="gpx"?" · importert":""}`;
+    b.querySelector("span").textContent=`${r.src==="gpx"?"Importert":TYPE_LABEL[r.type||"run"]} · ${when} · ${fmtPace(r.dur,r.dist)}/km`;
     b.querySelector(".n").textContent = r.newM>=1000 ? `+${fmtKm(r.newM)} km` : `+${r.newM} m`;
     b.onclick=()=>{ $("p-history").hidden=true; showTrack(r); };
     el.appendChild(b);
@@ -982,9 +997,9 @@ $("m-reset").onclick=async()=>{
     stats=(await idb.get("kv","stats"))||null; if(stats && stats.v!==3) stats=null; if(stats) prepBB();
     const draft=await idb.get("kv","draft");
     if(draft && draft.dist>=100){
-      runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",pts:thin(draft.pts||[])});
+      runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",type:draft.type||"run",pts:thin(draft.pts||[])});
       await idb.set("kv","runs",runs); await idb.set("kv","draft",null);
-      toast("En avbrutt løpetur ble lagret");
+      toast("En avbrutt tur ble lagret");
     }
   }catch(e){ console.warn(e); }
   setRunUI(); updateStats(); sheetH();
