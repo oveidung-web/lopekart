@@ -1,5 +1,5 @@
 // Løpekart service worker: appen fungerer offline, og kartfliser du har sett, caches.
-const APP = "lopekart-app-v2";
+const APP = "lopekart-app-v3";
 const TILES = "lopekart-tiles-v1";
 const MAX_TILES = 3000;
 const SHELL = ["./", "index.html", "manifest.webmanifest", "leaflet.js", "leaflet.css",

@@ -213,7 +213,7 @@ const PIECE_LEN = 15;           // veier deles i biter på maks 15 m
 const MAX_SPEED = 7;            // m/s (~25 km/t)
 const CELL_LAT = 0.01, CELL_LON = 0.02;      // ~1,1 x 1,1 km i Bergen
 const BUCKET_LAT = 0.0005, BUCKET_LON = 0.001;
-const OVERPASS = ["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+const OVERPASS = ["https://overpass-api.de/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
 const START = [60.3913, 5.3221]; // Bergen sentrum, brukes til GPS svarer
 
 /* ---------- Hjelpere ---------- */
@@ -329,22 +329,29 @@ function ingest(list){
     ways.set(w.id,w); drawWay(w);
   }
 }
+let epStart = 0;
 async function fetchOverpass(s,w,n,e){
   const q = `[out:json][timeout:40];way["highway"]["highway"!~"^(motorway|motorway_link|construction|proposed|raceway|bus_guideway|platform|elevator|corridor|abandoned|razed|via_ferrata)$"]["service"!~"^(driveway|parking_aisle|drive-through)$"]["access"!~"^(private|no)$"]["area"!="yes"](${s},${w},${n},${e});out geom;`;
   let lastErr;
-  for(let attempt=0; attempt<4; attempt++){
-    const url = OVERPASS[attempt % OVERPASS.length];
+  for(let attempt=0; attempt<8; attempt++){
+    const url = OVERPASS[(epStart + attempt) % OVERPASS.length];
+    const ac = new AbortController(); const tm = setTimeout(()=>ac.abort(), 35000);
     try{
-      const r = await fetch(url,{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
-      if(r.status===429 || r.status>=500){ lastErr=new Error("HTTP "+r.status); await sleep(3000*(attempt+1)); continue; }
+      const r = await fetch(url,{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}, signal:ac.signal});
       if(!r.ok) throw new Error("HTTP "+r.status);
-      return await r.json();
-    }catch(err){ lastErr=err; await sleep(2000*(attempt+1)); }
+      const j = await r.json();
+      epStart = (epStart + attempt) % OVERPASS.length; // husk serveren som svarte
+      return j;
+    }catch(err){
+      lastErr=err;
+      if(attempt>=1) showChip("Veidataene svarer tregt nå. Prøver en annen server…");
+      await sleep(Math.min(15000, 1500*(attempt+1)));
+    } finally { clearTimeout(tm); }
   }
   throw lastErr;
 }
 let busy = 0;
-function setBusy(d){ busy+=d; const c=$("chip"); if(busy>0){ c.textContent="Henter veier…"; c.hidden=false; } else if(c.textContent==="Henter veier…") c.hidden=true; }
+function setBusy(d){ busy+=d; const c=$("chip"); if(busy>0){ c.textContent="Henter veier…"; c.hidden=false; } else if(c.textContent==="Henter veier…"||c.textContent.startsWith("Veidataene")) c.hidden=true; }
 let queue = Promise.resolve();
 function loadCell(id){
   if(loadedCells.has(id)) return Promise.resolve();
@@ -373,7 +380,7 @@ function loadCell(id){
     });
     queue = job.catch(()=>{});
     await job;
-  })().catch(err=>{ console.warn("celle",id,err); showChip("Fikk ikke hentet veier. Prøver igjen når du flytter kartet.",4000); }).finally(()=>pendingCells.delete(id));
+  })().catch(err=>{ console.warn("celle",id,err); showChip("Fikk ikke hentet veier nå. Prøver igjen om litt.",5000); }).finally(()=>pendingCells.delete(id));
   pendingCells.set(id,p);
   return p;
 }
@@ -469,6 +476,8 @@ function updateAreaName(){
   },300);
 }
 map.on("moveend",()=>{ loadView(); updateStats(); updateAreaName(); });
+// prøv igjen jevnlig for celler som feilet
+setInterval(()=>{ if(document.visibilityState!=="visible") return; loadView(); if(me) cellsAround(me[0],me[1]).forEach(loadCell); }, 45000);
 
 /* ---------- UI-hjelpere ---------- */
 let chipTimer=null;
