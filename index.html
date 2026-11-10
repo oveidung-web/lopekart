@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Løpekart</title>
+<meta name="theme-color" content="#14171c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Løpekart">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: kart i full skjerm, flytende knapper oppe, statusark nede. */
+:root{
+  --bg:#f3f4f2; --panel:#ffffff; --fg:#16191d; --muted:#6b727c; --line:#dfe2e0;
+  --accent:#ff6a13; --accent-fg:#ffffff; --locked:#7d8794; --run:#1f6fff; --danger:#d23a2a;
+  --tile-filter:grayscale(.85) contrast(.9) brightness(1.04);
+  --shadow:0 6px 24px rgba(20,25,30,.16);
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#101317; --panel:#1a1e24; --fg:#eef0f2; --muted:#949ba5; --line:#2b3038;
+    --accent:#ff7a29; --accent-fg:#14100c; --locked:#6c7580; --run:#5b95ff; --danger:#ff6b5b;
+    --tile-filter:invert(1) hue-rotate(180deg) grayscale(.9) brightness(.72) contrast(1.1);
+    --shadow:0 6px 24px rgba(0,0,0,.5);
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+#map{position:fixed;inset:0;background:var(--bg)}
+.leaflet-tile-pane{filter:var(--tile-filter)}
+.leaflet-container{background:var(--bg);font-family:var(--f-body)}
+.leaflet-control-attribution{font-size:10px;background:color-mix(in srgb,var(--panel) 75%,transparent)!important;color:var(--muted)}
+.leaflet-control-attribution a{color:var(--muted)}
+.leaflet-bottom{bottom:var(--sheet-h,170px)}
+
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{position:fixed;top:0;left:0;right:0;z-index:1000;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px));pointer-events:none}
+.top > *{pointer-events:auto}
+.brand{background:var(--panel);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:1px;min-width:0}
+.brand b{font:700 19px/1 var(--f-display);letter-spacing:.02em;text-transform:uppercase}
+.brand span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tools{display:flex;flex-direction:column;gap:8px}
+.icon-btn{width:46px;height:46px;border-radius:12px;border:0;background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center}
+.icon-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn.on{background:var(--run);color:#fff}
+
+.chip{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 70px);z-index:1001;background:var(--fg);color:var(--bg);
+  border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;box-shadow:var(--shadow);max-width:calc(100% - 32px);text-align:center}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--panel);border-radius:18px 18px 0 0;box-shadow:var(--shadow);
+  padding:14px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 14px) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{min-width:0}
+.stat .v{font:700 30px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap}
+.stat .v small{font-size:16px;font-weight:500;color:var(--muted);margin-left:2px}
+.stat .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:4px}
+.stat.hl .v{color:var(--accent)}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s}
+.go{display:flex;gap:10px}
+.btn{flex:1;border:0;border-radius:14px;padding:15px 18px;font:700 20px/1 var(--f-display);text-transform:uppercase;letter-spacing:.06em}
+.btn.primary{background:var(--accent);color:var(--accent-fg)}
+.btn.stop{background:var(--fg);color:var(--bg)}
+.btn.ghost{background:var(--line);color:var(--fg);flex:0 0 auto}
+
+/* Paneler */
+.panel{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center}
+.panel .card{background:var(--panel);width:100%;max-width:560px;max-height:85%;overflow:auto;border-radius:18px 18px 0 0;
+  padding:18px max(18px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(18px,env(safe-area-inset-left,0px))}
+.card h2{font:700 24px/1.1 var(--f-display);text-transform:uppercase;letter-spacing:.03em;margin:0 0 4px}
+.card h3{font:700 16px/1.2 var(--f-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px}
+.card p{margin:6px 0;color:var(--fg);max-width:60ch}
+.card .sub{color:var(--muted);font-size:13px}
+.list{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);background:none;border-left:0;border-right:0;border-top:0;text-align:left;width:100%}
+.row:last-child{border-bottom:0}
+.row .t{flex:1;min-width:0}
+.row .t b{display:block;font-weight:600}
+.row .t span{font-size:13px;color:var(--muted)}
+.row .n{font:700 18px/1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--accent);white-space:nowrap}
+.row svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--muted);flex:none}
+.row.danger,.row.danger svg{color:var(--danger)}
+.close{float:right;border:0;background:var(--line);border-radius:999px;width:34px;height:34px;font-size:18px;line-height:1}
+ol.steps{padding-left:20px;margin:6px 0}
+ol.steps li{margin:4px 0}
+.empty{color:var(--muted);padding:12px 0}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--sheet-h,170px) + 14px);z-index:1500;background:var(--accent);color:var(--accent-fg);
+  border-radius:12px;padding:10px 16px;font-weight:600;box-shadow:var(--shadow);max-width:calc(100% - 32px);text-align:center;animation:pop .25s ease-out}
+@keyframes pop{from{transform:translate(-50%,8px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}.bar i{transition:none}}
+.me-dot{width:18px;height:18px;border-radius:50%;background:var(--run);border:3px solid #fff;box-shadow:0 0 0 6px color-mix(in srgb,var(--run) 25%,transparent)}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Kart"></div>
+
+<div class="top">
+  <div class="brand"><b>Løpekart</b><span id="area-name">Finner posisjonen din…</span></div>
+  <div class="tools">
+    <button class="icon-btn" id="btn-locate" aria-label="Sentrer på meg">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-menu" aria-label="Meny">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+</div>
+<div class="chip" id="chip" hidden></div>
+
+<div class="sheet" id="sheet">
+  <div class="stats" id="stats-idle">
+    <div class="stat hl"><div class="v" id="s-total">0<small>km</small></div><div class="l">Låst opp totalt</div></div>
+    <div class="stat"><div class="v" id="s-area">0<small>%</small></div><div class="l">Av veiene her</div></div>
+    <div class="stat"><div class="v" id="s-runs">0</div><div class="l">Løpeturer</div></div>
+  </div>
+  <div class="stats" id="stats-run" hidden>
+    <div class="stat"><div class="v" id="r-dist">0,00<small>km</small></div><div class="l">Distanse</div></div>
+    <div class="stat"><div class="v" id="r-time">0:00</div><div class="l">Tid · <span id="r-pace">–:–</span>/km</div></div>
+    <div class="stat hl"><div class="v" id="r-new">0<small>m</small></div><div class="l">Ny vei</div></div>
+  </div>
+  <div class="bar" aria-hidden="true"><i id="area-bar"></i></div>
+  <div class="go">
+    <button class="btn primary" id="btn-start">Start løpetur</button>
+    <button class="btn ghost" id="btn-pause" hidden>Pause</button>
+  </div>
+</div>
+
+<!-- Meny -->
+<div class="panel" id="p-menu" hidden>
+  <div class="card" role="dialog" aria-label="Meny">
+    <button class="close" data-close aria-label="Lukk">✕</button>
+    <h2>Løpekart</h2>
+    <p class="sub" id="menu-sum"></p>
+    <div class="list" style="margin-top:8px">
+      <button class="row" id="m-history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><div class="t"><b>Løpeturer</b><span>Historikk og ruter</span></div></button>
+      <button class="row" id="m-import"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><div class="t"><b>Importer GPX</b><span>Fra Apple Watch / Helse, Strava, Garmin</span></div></button>
+      <button class="row" id="m-help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg><div class="t"><b>Slik fungerer det</b><span>Og hvordan hente turer fra Apple Watch</span></div></button>
+      <button class="row" id="m-export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><div class="t"><b>Ta sikkerhetskopi</b><span>Lagre fremgangen som fil</span></div></button>
+      <button class="row" id="m-restore"><svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M5.5 15A7.5 7.5 0 0 0 19 17M18.5 9A7.5 7.5 0 0 0 5 7"/></svg><div class="t"><b>Gjenopprett fra fil</b><span>Henter inn en sikkerhetskopi</span></div></button>
+      <button class="row danger" id="m-reset"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><div class="t"><b>Nullstill alt</b><span>Låser alle veier igjen</span></div></button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="p-history" hidden>
+  <div class="card" role="dialog" aria-label="Løpeturer">
+    <button class="close" data-close aria-label="Lukk">✕</button>
+    <h2>Løpeturer</h2>
+    <p class="sub">Trykk på en tur for å se ruten på kartet.</p>
+    <div class="list" id="history-list"></div>
+  </div>
+</div>
+
+<div class="panel" id="p-help" hidden>
+  <div class="card" role="dialog" aria-label="Slik fungerer det">
+    <button class="close" data-close aria-label="Lukk">✕</button>
+    <h2>Slik fungerer det</h2>
+    <p>Grå streker er veier og stier du ikke har løpt. Når du løper forbi, blir biten oransje og er låst opp for godt. Veiene hentes fra OpenStreetMap rundt der du er.</p>
+    <p>Du må være innen ca. 18 meter fra veien, og GPS-en må være god nok. Over 25 km/t teller ikke, så sykkel og bil låser ikke opp noe.</p>
+    <h3>Under løpeturen</h3>
+    <p>På iPhone stopper GPS-en i nettleseren når skjermen låses. Appen prøver å holde skjermen på selv, men sett gjerne Autolås til «Aldri» i Innstillinger → Skjerm og lysstyrke mens du løper, og skru ned lysstyrken.</p>
+    <h3>Turer fra Apple Watch</h3>
+    <ol class="steps">
+      <li>Åpne Helse-appen, trykk på profilbildet øverst, og velg <b>Eksporter alle helsedata</b>.</li>
+      <li>Lagre filen i Filer. Trykk på zip-filen for å pakke den ut.</li>
+      <li>Rutene ligger i mappen <b>workout-routes</b> som .gpx-filer.</li>
+      <li>Velg <b>Importer GPX</b> her og merk alle filene du vil ha med.</li>
+    </ol>
+    <p class="sub">Turer som allerede er importert, hoppes over.</p>
+    <h3>Lagring</h3>
+    <p>Alt lagres bare på denne telefonen, i nettleseren. Ta en sikkerhetskopi av og til, for sletter du nettleserdata, forsvinner fremgangen.</p>
+    <p class="sub">Kartdata © OpenStreetMap-bidragsytere.</p>
+  </div>
+</div>
+
+<div class="panel" id="p-confirm" hidden>
+  <div class="card" role="dialog" aria-label="Bekreft">
+    <h2 id="c-title"></h2>
+    <p id="c-text"></p>
+    <div class="go" style="margin-top:14px">
+      <button class="btn ghost" id="c-no" style="flex:1">Avbryt</button>
+      <button class="btn primary" id="c-yes">OK</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="f-gpx" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple hidden>
+<input type="file" id="f-restore" accept=".json,application/json" hidden>
+
+<script src="leaflet.js"></script>
+<script>
+"use strict";
+/* ---------- Konstanter ---------- */
+const UNLOCK_RADIUS = 18;       // meter fra veien
+const MAX_ACCURACY = 35;        // dårligere GPS-fix ignoreres
+const PIECE_LEN = 15;           // veier deles i biter på maks 15 m
+const MAX_SPEED = 7;            // m/s (~25 km/t)
+const CELL_LAT = 0.01, CELL_LON = 0.02;      // ~1,1 x 1,1 km i Bergen
+const BUCKET_LAT = 0.0005, BUCKET_LON = 0.001;
+const OVERPASS = ["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+const START = [60.3913, 5.3221]; // Bergen sentrum, brukes til GPS svarer
+
+/* ---------- Hjelpere ---------- */
+const $ = id => document.getElementById(id);
+const mPerLat = 110540;
+const mPerLon = lat => 111320 * Math.cos(lat * Math.PI / 180);
+function dist(a, b){ const k = mPerLon((a[0]+b[0])/2); const dx=(b[1]-a[1])*k, dy=(b[0]-a[0])*mPerLat; return Math.hypot(dx,dy); }
+function distToSeg(p, a, b){
+  const k = mPerLon(p[0]);
+  const ax=(a[1]-p[1])*k, ay=(a[0]-p[0])*mPerLat, bx=(b[1]-p[1])*k, by=(b[0]-p[0])*mPerLat;
+  const vx=bx-ax, vy=by-ay, L=vx*vx+vy*vy;
+  let t = L ? -(ax*vx+ay*vy)/L : 0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(ax+t*vx, ay+t*vy);
+}
+const lerp = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+const fmtKm = m => (m/1000).toLocaleString("nb-NO",{minimumFractionDigits: m<10000?2:1, maximumFractionDigits: m<10000?2:1});
+function fmtTime(s){ s=Math.round(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; }
+function fmtPace(sec, m){ if(m<50) return "–:–"; const p=sec/(m/1000); if(p>3600) return "–:–"; return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,"0")}`; }
+const cellId = (lat,lon) => `${Math.floor(lat/CELL_LAT)}_${Math.floor(lon/CELL_LON)}`;
+const bucketId = (lat,lon) => `${Math.floor(lat/BUCKET_LAT)}_${Math.floor(lon/BUCKET_LON)}`;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ---------- IndexedDB ---------- */
+const idb = (() => {
+  let dbp;
+  function open(){
+    if(!dbp) dbp = new Promise((res,rej)=>{
+      const r = indexedDB.open("lopekart",1);
+      r.onupgradeneeded = () => { r.result.createObjectStore("cells"); r.result.createObjectStore("kv"); };
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function op(store, mode, fn){
+    const db = await open();
+    return new Promise((res,rej)=>{ const tx=db.transaction(store,mode); const q=fn(tx.objectStore(store)); tx.oncomplete=()=>res(q&&q.result); tx.onerror=()=>rej(tx.error); });
+  }
+  return {
+    get:(s,k)=>op(s,"readonly",st=>st.get(k)),
+    set:(s,k,v)=>op(s,"readwrite",st=>st.put(v,k)),
+    clear:s=>op(s,"readwrite",st=>st.clear()),
+  };
+})();
+
+/* ---------- Tilstand ---------- */
+const ways = new Map();      // wayId -> {id,name,hw,ll:[[lat,lon]],wp:[{pid,a,b}]}
+const pieces = new Map();    // pid -> {a,b,len,ways:[wayId]}
+const buckets = new Map();   // bucketId -> [pid]
+let unlocked = new Map();    // pid -> lengde i meter
+let runs = [];               // fullførte turer
+let totalUnlocked = 0;
+const loadedCells = new Set();
+const pendingCells = new Map(); // cellId -> promise
+
+/* ---------- Kart ---------- */
+const map = L.map("map",{zoomControl:false, preferCanvas:true, attributionControl:true}).setView(START, 15);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+const renderer = L.canvas({padding:0.3});
+const lockedLayer = L.layerGroup().addTo(map);
+const openLayer = L.layerGroup().addTo(map);
+const trackLayer = L.layerGroup().addTo(map);
+const css = getComputedStyle(document.documentElement);
+const C = () => ({accent: css.getPropertyValue("--accent").trim(), locked: css.getPropertyValue("--locked").trim(), run: css.getPropertyValue("--run").trim()});
+let colors = C();
+const wayLocked = new Map(), wayOpen = new Map();
+
+function drawWay(w){
+  if(!wayLocked.has(w.id)){
+    const pl = L.polyline(w.ll,{renderer, color:colors.locked, weight:2, opacity:.75, dashArray:"3 4", interactive:false});
+    wayLocked.set(w.id, pl); lockedLayer.addLayer(pl);
+  }
+  // sammenhengende opplåste biter
+  const runsLL = []; let cur = null;
+  for(const s of w.wp){
+    if(unlocked.has(s.pid)){ if(!cur){ cur=[s.a]; runsLL.push(cur); } cur.push(s.b); }
+    else cur = null;
+  }
+  const old = wayOpen.get(w.id);
+  if(!runsLL.length){ if(old){ openLayer.removeLayer(old); wayOpen.delete(w.id); } return; }
+  if(old) old.setLatLngs(runsLL);
+  else { const pl=L.polyline(runsLL,{renderer, color:colors.accent, weight:5, opacity:.95, lineCap:"round", interactive:false}); wayOpen.set(w.id,pl); openLayer.addLayer(pl); }
+}
+function redrawAll(){ colors=C(); wayLocked.forEach(l=>l.setStyle({color:colors.locked})); wayOpen.forEach(l=>l.setStyle({color:colors.accent})); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", redrawAll);
+map.on("zoomend", ()=>{ const z=map.getZoom(); if(z<13 && map.hasLayer(lockedLayer)) map.removeLayer(lockedLayer); else if(z>=13 && !map.hasLayer(lockedLayer)) map.addLayer(lockedLayer); });
+
+/* ---------- Veidata ---------- */
+function ingest(list){
+  for(const r of list){
+    if(ways.has(r.i)) continue;
+    const ll=[]; for(let i=0;i<r.c.length;i+=2) ll.push([r.c[i], r.c[i+1]]);
+    const w = {id:r.i, name:r.n||"", hw:r.h, ll, wp:[]};
+    for(let i=0;i<ll.length-1;i++){
+      let na=r.d[i], nb=r.d[i+1], A=ll[i], B=ll[i+1], rev=false;
+      if(na>nb){ [na,nb]=[nb,na]; [A,B]=[B,A]; rev=true; }
+      const len = dist(A,B), n = Math.max(1, Math.ceil(len/PIECE_LEN));
+      const seg=[];
+      for(let k=0;k<n;k++){
+        const pid = n===1 ? `${na}-${nb}` : `${na}-${nb}-${k}`;
+        const a=lerp(A,B,k/n), b=lerp(A,B,(k+1)/n);
+        let p = pieces.get(pid);
+        if(!p){
+          p={a,b,len:len/n,ways:[]}; pieces.set(pid,p);
+          const keys=new Set([bucketId(a[0],a[1]),bucketId(b[0],b[1]),bucketId((a[0]+b[0])/2,(a[1]+b[1])/2)]);
+          for(const key of keys){ let arr=buckets.get(key); if(!arr){arr=[];buckets.set(key,arr);} arr.push(pid); }
+        }
+        p.ways.push(w.id);
+        seg.push(rev ? {pid,a:b,b:a} : {pid,a,b});
+      }
+      if(rev) seg.reverse();
+      w.wp.push(...seg);
+    }
+    ways.set(w.id,w); drawWay(w);
+  }
+}
+async function fetchOverpass(s,w,n,e){
+  const q = `[out:json][timeout:40];way["highway"]["highway"!~"^(motorway|motorway_link|construction|proposed|raceway|bus_guideway|platform|elevator|corridor|abandoned|razed|via_ferrata)$"]["service"!~"^(driveway|parking_aisle|drive-through)$"]["access"!~"^(private|no)$"]["area"!="yes"](${s},${w},${n},${e});out geom;`;
+  let lastErr;
+  for(let attempt=0; attempt<4; attempt++){
+    const url = OVERPASS[attempt % OVERPASS.length];
+    try{
+      const r = await fetch(url,{method:"POST", body:"data="+encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
+      if(r.status===429 || r.status>=500){ lastErr=new Error("HTTP "+r.status); await sleep(3000*(attempt+1)); continue; }
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      return await r.json();
+    }catch(err){ lastErr=err; await sleep(2000*(attempt+1)); }
+  }
+  throw lastErr;
+}
+let busy = 0;
+function setBusy(d){ busy+=d; const c=$("chip"); if(busy>0){ c.textContent="Henter veier…"; c.hidden=false; } else if(c.textContent==="Henter veier…") c.hidden=true; }
+let queue = Promise.resolve();
+function loadCell(id){
+  if(loadedCells.has(id)) return Promise.resolve();
+  if(pendingCells.has(id)) return pendingCells.get(id);
+  const p = (async()=>{
+    const cached = await idb.get("cells",id).catch(()=>null);
+    if(cached){ ingest(cached); loadedCells.add(id); return; }
+    // én forespørsel om gangen mot Overpass
+    const job = queue.then(async()=>{
+      setBusy(1);
+      try{
+        const [cy,cx]=id.split("_").map(Number);
+        const s=(cy*CELL_LAT).toFixed(5), w=(cx*CELL_LON).toFixed(5), n=((cy+1)*CELL_LAT).toFixed(5), e=((cx+1)*CELL_LON).toFixed(5);
+        const data = await fetchOverpass(s,w,n,e);
+        const list = [];
+        for(const el of data.elements||[]){
+          if(el.type!=="way"||!el.geometry||!el.nodes||el.geometry.length<2) continue;
+          const c=[]; for(const g of el.geometry) c.push(+g.lat.toFixed(6), +g.lon.toFixed(6));
+          list.push({i:el.id, h:el.tags?.highway||"", n:el.tags?.name||"", c, d:el.nodes});
+        }
+        await idb.set("cells",id,list).catch(()=>{});
+        ingest(list); loadedCells.add(id);
+      } finally { setBusy(-1); }
+    });
+    queue = job.catch(()=>{});
+    await job;
+  })().catch(err=>{ console.warn("celle",id,err); showChip("Fikk ikke hentet veier. Prøver igjen når du flytter kartet.",4000); }).finally(()=>pendingCells.delete(id));
+  pendingCells.set(id,p);
+  return p;
+}
+function cellsInBounds(s,w,n,e){
+  const out=[];
+  for(let y=Math.floor(s/CELL_LAT); y<=Math.floor(n/CELL_LAT); y++)
+    for(let x=Math.floor(w/CELL_LON); x<=Math.floor(e/CELL_LON); x++) out.push(`${y}_${x}`);
+  return out;
+}
+function loadView(){
+  if(map.getZoom()<14) return;
+  const b=map.getBounds();
+  const ids=cellsInBounds(b.getSouth(),b.getWest(),b.getNorth(),b.getEast());
+  const c=map.getCenter();
+  ids.sort((p,q)=>{ const d=id=>{const [y,x]=id.split("_").map(Number); return Math.hypot((y+.5)*CELL_LAT-c.lat,((x+.5)*CELL_LON-c.lng)/2);}; return d(p)-d(q); });
+  ids.slice(0,12).forEach(loadCell);
+}
+function cellsAround(lat,lon){ return cellsInBounds(lat-CELL_LAT*.6, lon-CELL_LON*.6, lat+CELL_LAT*.6, lon+CELL_LON*.6); }
+
+/* ---------- Opplåsing ---------- */
+let saveTimer=null;
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveUnlocked,2500); }
+async function saveUnlocked(){ clearTimeout(saveTimer); await idb.set("kv","unlocked",Object.fromEntries(unlocked)).catch(()=>{}); }
+function unlockAt(p, touched){
+  const [y,x]=[Math.floor(p[0]/BUCKET_LAT), Math.floor(p[1]/BUCKET_LON)];
+  let gained=0;
+  for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+    const arr=buckets.get(`${y+dy}_${x+dx}`); if(!arr) continue;
+    for(const pid of arr){
+      if(unlocked.has(pid)) continue;
+      const pc=pieces.get(pid);
+      if(distToSeg(p,pc.a,pc.b)<=UNLOCK_RADIUS){
+        const len=Math.round(pc.len*10)/10;
+        unlocked.set(pid,len); totalUnlocked+=len; gained+=len;
+        for(const wid of pc.ways) touched.add(wid);
+      }
+    }
+  }
+  return gained;
+}
+// Lås opp langs linjen fra a til b (fyller hull mellom GPS-punkter)
+function unlockAlong(a, b, touched){
+  const d = dist(a,b);
+  if(d>150) return unlockAt(b,touched);
+  const n=Math.max(1,Math.ceil(d/8)); let g=0;
+  for(let i=1;i<=n;i++) g+=unlockAt(lerp(a,b,i/n),touched);
+  return g;
+}
+function afterUnlock(touched, announce){
+  if(!touched.size) return;
+  const fresh=[];
+  for(const wid of touched){
+    const w=ways.get(wid); if(!w) continue;
+    const before = wayOpen.has(wid);
+    drawWay(w);
+    if(!before && w.name && announce) fresh.push(w.name);
+  }
+  scheduleSave(); updateStats();
+  if(fresh.length) toast(`Låst opp: ${[...new Set(fresh)].slice(0,2).join(", ")}`);
+}
+
+/* ---------- Statistikk ---------- */
+function areaCoverage(){
+  const b=map.getBounds(); let tot=0, un=0;
+  for(const [pid,p] of pieces){
+    const m=[(p.a[0]+p.b[0])/2,(p.a[1]+p.b[1])/2];
+    if(m[0]<b.getSouth()||m[0]>b.getNorth()||m[1]<b.getWest()||m[1]>b.getEast()) continue;
+    tot+=p.len; if(unlocked.has(pid)) un+=p.len;
+  }
+  return tot? un/tot : 0;
+}
+let areaTimer=null;
+function updateStats(){
+  $("s-total").innerHTML = `${fmtKm(totalUnlocked)}<small>km</small>`;
+  $("s-runs").textContent = runs.length;
+  clearTimeout(areaTimer);
+  areaTimer=setTimeout(()=>{ const pct=areaCoverage()*100; $("s-area").innerHTML=`${pct<10?pct.toLocaleString("nb-NO",{maximumFractionDigits:1}):Math.round(pct)}<small>%</small>`; $("area-bar").style.width=Math.min(100,pct)+"%"; },150);
+  $("menu-sum").textContent = `${fmtKm(totalUnlocked)} km låst opp · ${runs.length} løpeturer · ${ways.size.toLocaleString("nb-NO")} veier lastet`;
+}
+let geoNameTimer=null;
+function updateAreaName(){
+  clearTimeout(geoNameTimer);
+  geoNameTimer=setTimeout(()=>{
+    const c=map.getCenter(); let best=null, bd=1e9;
+    const [y,x]=[Math.floor(c.lat/BUCKET_LAT),Math.floor(c.lng/BUCKET_LON)];
+    for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
+      for(const pid of buckets.get(`${y+dy}_${x+dx}`)||[]){
+        const p=pieces.get(pid); const d=distToSeg([c.lat,c.lng],p.a,p.b);
+        if(d<bd){ for(const wid of p.ways){ const w=ways.get(wid); if(w&&w.name){ bd=d; best=w.name; break; } } }
+      }
+    }
+    if(best) $("area-name").textContent = `Ved ${best}`;
+  },300);
+}
+map.on("moveend",()=>{ loadView(); updateStats(); updateAreaName(); });
+
+/* ---------- UI-hjelpere ---------- */
+let chipTimer=null;
+function showChip(t,ms){ const c=$("chip"); c.textContent=t; c.hidden=false; clearTimeout(chipTimer); if(ms) chipTimer=setTimeout(()=>{ if(c.textContent===t) c.hidden=true; },ms); }
+let toastEl=null, toastTimer=null;
+function toast(t){ if(toastEl) toastEl.remove(); toastEl=document.createElement("div"); toastEl.className="toast"; toastEl.textContent=t; document.body.appendChild(toastEl); clearTimeout(toastTimer); toastTimer=setTimeout(()=>{toastEl?.remove(); toastEl=null;},3200); try{ navigator.vibrate?.(40); }catch{} }
+function sheetH(){ document.documentElement.style.setProperty("--sheet-h", $("sheet").offsetHeight+"px"); }
+new ResizeObserver(sheetH).observe($("sheet"));
+function openPanel(id){ document.querySelectorAll(".panel").forEach(p=>p.hidden=true); $(id).hidden=false; }
+document.querySelectorAll(".panel").forEach(p=>{ p.addEventListener("click",e=>{ if(e.target===p||e.target.closest("[data-close]")) p.hidden=true; }); });
+function confirmBox(title,text,yes){ return new Promise(res=>{ $("c-title").textContent=title; $("c-text").textContent=text; $("c-yes").textContent=yes; openPanel("p-confirm");
+  const done=v=>{ $("p-confirm").hidden=true; $("c-yes").onclick=$("c-no").onclick=null; res(v); }; $("c-yes").onclick=()=>done(true); $("c-no").onclick=()=>done(false); }); }
+
+/* ---------- Posisjon og løpetur ---------- */
+let me=null, meMarker=null, accCircle=null, follow=true, watchId=null, firstFix=true;
+let run=null; // {start, active, elapsed, lastResume, dist, newM, pts:[], last}
+let wakeLock=null;
+function onPos(pos){
+  const {latitude:lat, longitude:lon, accuracy} = pos.coords;
+  me=[lat,lon];
+  if(!meMarker){
+    meMarker=L.marker(me,{icon:L.divIcon({className:"",html:'<div class="me-dot"></div>',iconSize:[18,18],iconAnchor:[9,9]}),interactive:false,zIndexOffset:1000}).addTo(map);
+    accCircle=L.circle(me,{radius:accuracy,color:colors.run,weight:1,opacity:.4,fillOpacity:.08,interactive:false}).addTo(map);
+  } else { meMarker.setLatLng(me); accCircle.setLatLng(me).setRadius(accuracy); }
+  if(firstFix){ firstFix=false; map.setView(me,16); }
+  else if(follow) map.panTo(me,{animate:true});
+  cellsAround(lat,lon).forEach(loadCell);
+  if(run && run.active) trackPoint(me, accuracy, pos.timestamp);
+}
+function onPosErr(err){
+  if(err.code===1) showChip("Appen har ikke tilgang til posisjon. Skru det på i Innstillinger → Personvern → Stedstjenester → Safari.",8000);
+  else if(!me) showChip("Finner ikke GPS-signal ennå…",4000);
+}
+function startWatch(){
+  if(!("geolocation" in navigator)){ showChip("Denne nettleseren har ikke GPS.",5000); return; }
+  if(watchId!=null) return;
+  watchId = navigator.geolocation.watchPosition(onPos,onPosErr,{enableHighAccuracy:true, maximumAge:0, timeout:20000});
+}
+function trackPoint(p, acc, t){
+  if(acc>MAX_ACCURACY) return;
+  const touched=new Set();
+  if(run.last){
+    const d=dist(run.last.p,p), dt=(t-run.last.t)/1000;
+    if(d<3) return; // står stille / støy
+    const speed = dt>0 ? d/dt : 0;
+    if(speed>MAX_SPEED*1.6){ run.last={p,t}; return; } // hopp i GPS
+    run.dist+=d;
+    if(speed<=MAX_SPEED) run.newM += unlockAlong(run.last.p,p,touched);
+  } else run.newM += unlockAt(p,touched);
+  run.last={p,t}; run.pts.push([+p[0].toFixed(6),+p[1].toFixed(6),Math.round(t/1000)]);
+  runLine.addLatLng(p);
+  afterUnlock(touched,true);
+  renderRun();
+}
+let runLine=null, runTick=null;
+function elapsed(){ return run ? run.elapsed + (run.active ? (Date.now()-run.lastResume)/1000 : 0) : 0; }
+function renderRun(){
+  if(!run) return;
+  const e=elapsed();
+  $("r-dist").innerHTML=`${fmtKm(run.dist)}<small>km</small>`;
+  $("r-time").textContent=fmtTime(e);
+  $("r-pace").textContent=fmtPace(e,run.dist);
+  $("r-new").innerHTML = run.newM>=1000 ? `${fmtKm(run.newM)}<small>km</small>` : `${Math.round(run.newM)}<small>m</small>`;
+}
+async function keepAwake(){ try{ if("wakeLock" in navigator && run?.active) wakeLock = await navigator.wakeLock.request("screen"); }catch{} }
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") keepAwake(); });
+function setRunUI(){
+  const r=!!run;
+  $("stats-idle").hidden=r; $("stats-run").hidden=!r; $("btn-pause").hidden=!r;
+  $("btn-start").textContent = r ? "Avslutt" : "Start løpetur";
+  $("btn-start").className = "btn " + (r ? "stop" : "primary");
+  $("btn-pause").textContent = run && !run.active ? "Fortsett" : "Pause";
+}
+async function startRun(){
+  startWatch();
+  run={start:Date.now(), active:true, elapsed:0, lastResume:Date.now(), dist:0, newM:0, pts:[], last:null};
+  trackLayer.clearLayers();
+  runLine=L.polyline([],{renderer,color:colors.run,weight:3,opacity:.8,interactive:false}).addTo(trackLayer);
+  follow=true; $("btn-locate").classList.add("on");
+  if(me) map.setView(me,Math.max(map.getZoom(),16));
+  setRunUI(); renderRun(); keepAwake();
+  runTick=setInterval(renderRun,1000);
+  showChip("Hold skjermen på mens du løper",3500);
+  saveDraft();
+}
+function togglePause(){
+  if(!run) return;
+  if(run.active){ run.elapsed+=(Date.now()-run.lastResume)/1000; run.active=false; run.last=null; try{wakeLock?.release();}catch{} }
+  else { run.active=true; run.lastResume=Date.now(); keepAwake(); }
+  setRunUI(); renderRun(); saveDraft();
+}
+async function stopRun(){
+  if(!run) return;
+  const ok = run.dist<100 ? await confirmBox("Avslutte?","Turen er kortere enn 100 meter og blir ikke lagret i historikken. Veier du har låst opp, beholdes.","Avslutt") : true;
+  if(!ok) return;
+  clearInterval(runTick);
+  const e=elapsed();
+  if(run.dist>=100){
+    runs.unshift({id:"live-"+run.start, start:run.start, dur:Math.round(e), dist:Math.round(run.dist), newM:Math.round(run.newM), src:"live", pts:thin(run.pts)});
+    await idb.set("kv","runs",runs).catch(()=>{});
+    toast(`Lagret: ${fmtKm(run.dist)} km, ${Math.round(run.newM)} m ny vei`);
+  }
+  run=null; try{wakeLock?.release();}catch{} wakeLock=null;
+  await idb.set("kv","draft",null).catch(()=>{});
+  await saveUnlocked(); setRunUI(); updateStats();
+}
+function thin(pts){ const out=[]; let last=null; for(const p of pts){ if(!last||dist(last,p)>=12){ out.push(p); last=p; } } if(pts.length&&out[out.length-1]!==pts[pts.length-1]) out.push(pts[pts.length-1]); return out; }
+// mellomlagring i tilfelle appen lukkes midt i en tur
+let draftTimer=setInterval(()=>{ if(run) saveDraft(); },15000);
+function saveDraft(){ if(!run) return; idb.set("kv","draft",{...run, elapsed:elapsed(), active:false, last:null, savedAt:Date.now()}).catch(()=>{}); }
+
+$("btn-start").onclick=()=> run ? stopRun() : startRun();
+$("btn-pause").onclick=togglePause;
+$("btn-locate").onclick=()=>{ follow=true; $("btn-locate").classList.add("on"); startWatch(); if(me) map.setView(me,Math.max(map.getZoom(),16)); else showChip("Venter på GPS…",3000); };
+map.on("dragstart",()=>{ follow=false; $("btn-locate").classList.remove("on"); });
+
+/* ---------- Historikk ---------- */
+function renderHistory(){
+  const el=$("history-list"); el.innerHTML="";
+  if(!runs.length){ el.innerHTML='<div class="empty">Ingen løpeturer ennå. Trykk «Start løpetur», eller importer GPX-filer fra Apple Watch.</div>'; return; }
+  for(const r of runs){
+    const b=document.createElement("button"); b.className="row";
+    const d=new Date(r.start);
+    const when=d.toLocaleDateString("nb-NO",{weekday:"short",day:"numeric",month:"short",year: d.getFullYear()!==new Date().getFullYear()?"numeric":undefined})+" "+d.toLocaleTimeString("nb-NO",{hour:"2-digit",minute:"2-digit"});
+    b.innerHTML=`<div class="t"><b></b><span></span></div><div class="n"></div>`;
+    b.querySelector("b").textContent=`${fmtKm(r.dist)} km · ${fmtTime(r.dur)}`;
+    b.querySelector("span").textContent=`${when} · ${fmtPace(r.dur,r.dist)}/km${r.src==="gpx"?" · importert":""}`;
+    b.querySelector(".n").textContent = r.newM>=1000 ? `+${fmtKm(r.newM)} km` : `+${r.newM} m`;
+    b.onclick=()=>{ $("p-history").hidden=true; showTrack(r); };
+    el.appendChild(b);
+  }
+}
+function showTrack(r){
+  trackLayer.clearLayers();
+  if(!r.pts?.length) return;
+  const ll=r.pts.map(p=>[p[0],p[1]]);
+  const pl=L.polyline(ll,{renderer,color:colors.run,weight:3,opacity:.85,dashArray:"6 6",interactive:false}).addTo(trackLayer);
+  follow=false; $("btn-locate").classList.remove("on");
+  map.fitBounds(pl.getBounds(),{padding:[40,40]});
+}
+
+/* ---------- GPX-import ---------- */
+function parseGpx(text){
+  const doc=new DOMParser().parseFromString(text,"application/xml");
+  let nodes=[...doc.getElementsByTagName("trkpt")]; if(!nodes.length) nodes=[...doc.getElementsByTagName("rtept")];
+  const pts=[];
+  for(const n of nodes){
+    const lat=parseFloat(n.getAttribute("lat")), lon=parseFloat(n.getAttribute("lon"));
+    if(!isFinite(lat)||!isFinite(lon)) continue;
+    const te=n.getElementsByTagName("time")[0]; const t=te?Date.parse(te.textContent):NaN;
+    pts.push([lat,lon,isFinite(t)?t:null]);
+  }
+  return pts;
+}
+async function importGpx(files){
+  let done=0, added=0, skipped=0, gained=0;
+  for(const f of files){
+    done++; showChip(`Importerer ${done} av ${files.length}…`);
+    let pts; try{ pts=parseGpx(await f.text()); }catch{ pts=[]; }
+    if(pts.length<2){ skipped++; continue; }
+    const start=pts[0][2]||f.lastModified;
+    const id="gpx-"+start+"-"+pts.length;
+    if(runs.some(r=>r.id===id)){ skipped++; continue; }
+    // last veier langs ruten
+    const cells=new Set(); for(const p of pts){ for(const c of cellsInBounds(p[0]-.002,p[1]-.004,p[0]+.002,p[1]+.004)) cells.add(c); }
+    if(cells.size>150){ skipped++; continue; } // trolig ikke en løpetur
+    await Promise.all([...cells].map(loadCell));
+    const touched=new Set(); let d=0, newM=0;
+    for(let i=1;i<pts.length;i++){
+      const a=pts[i-1], b=pts[i], seg=dist(a,b);
+      const dt = a[2]&&b[2] ? (b[2]-a[2])/1000 : 0;
+      if(dt>0 && seg/dt>MAX_SPEED*1.6) continue;
+      d+=seg;
+      if(!(dt>0 && seg/dt>MAX_SPEED)) newM+=unlockAlong(a,b,touched);
+    }
+    if(pts.length) newM+=unlockAt(pts[0],touched);
+    const dur = pts[0][2]&&pts[pts.length-1][2] ? Math.round((pts[pts.length-1][2]-pts[0][2])/1000) : 0;
+    runs.push({id,start,dur,dist:Math.round(d),newM:Math.round(newM),src:"gpx",pts:thin(pts.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6),p[2]?Math.round(p[2]/1000):0]))});
+    afterUnlock(touched,false);
+    added++; gained+=newM;
+  }
+  runs.sort((a,b)=>b.start-a.start);
+  await idb.set("kv","runs",runs).catch(()=>{});
+  await saveUnlocked(); updateStats();
+  $("chip").hidden=true;
+  toast(`${added} tur${added===1?"":"er"} importert, ${fmtKm(gained)} km ny vei${skipped?` · ${skipped} hoppet over`:""}`);
+}
+
+/* ---------- Sikkerhetskopi ---------- */
+function exportBackup(){
+  const data={app:"lopekart",v:1,saved:new Date().toISOString(),unlocked:Object.fromEntries(unlocked),runs};
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`lopekart-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},2000);
+}
+async function restoreBackup(file){
+  try{
+    const data=JSON.parse(await file.text());
+    if(data.app!=="lopekart") throw 0;
+    const ok=await confirmBox("Gjenopprette?","Fremgangen i filen legges sammen med det du har nå.","Gjenopprett");
+    if(!ok) return;
+    for(const [k,v] of Object.entries(data.unlocked||{})) if(!unlocked.has(k)){ unlocked.set(k,v); totalUnlocked+=v; }
+    for(const r of data.runs||[]) if(!runs.some(x=>x.id===r.id)) runs.push(r);
+    runs.sort((a,b)=>b.start-a.start);
+    await saveUnlocked(); await idb.set("kv","runs",runs);
+    ways.forEach(drawWay); updateStats(); toast("Sikkerhetskopien er hentet inn");
+  }catch{ showChip("Filen er ikke en sikkerhetskopi fra Løpekart.",4000); }
+}
+
+/* ---------- Meny ---------- */
+$("btn-menu").onclick=()=>{ updateStats(); openPanel("p-menu"); };
+$("m-history").onclick=()=>{ renderHistory(); openPanel("p-history"); };
+$("m-help").onclick=()=>openPanel("p-help");
+$("m-import").onclick=()=>{ $("p-menu").hidden=true; $("f-gpx").click(); };
+$("f-gpx").onchange=e=>{ const f=[...e.target.files]; e.target.value=""; if(f.length) importGpx(f); };
+$("m-export").onclick=()=>{ $("p-menu").hidden=true; exportBackup(); };
+$("m-restore").onclick=()=>{ $("p-menu").hidden=true; $("f-restore").click(); };
+$("f-restore").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) restoreBackup(f); };
+$("m-reset").onclick=async()=>{
+  const ok=await confirmBox("Nullstille alt?","Alle opplåste veier og løpeturer slettes fra denne telefonen. Dette kan ikke angres, med mindre du har en sikkerhetskopi.","Nullstill");
+  if(!ok) return;
+  unlocked=new Map(); totalUnlocked=0; runs=[];
+  await idb.set("kv","unlocked",{}); await idb.set("kv","runs",[]);
+  wayOpen.forEach(l=>openLayer.removeLayer(l)); wayOpen.clear(); trackLayer.clearLayers(); updateStats();
+};
+
+/* ---------- Oppstart ---------- */
+(async function boot(){
+  try{
+    const u=await idb.get("kv","unlocked"); if(u){ unlocked=new Map(Object.entries(u)); unlocked.forEach(v=>totalUnlocked+=v); }
+    runs=(await idb.get("kv","runs"))||[];
+    const draft=await idb.get("kv","draft");
+    if(draft && draft.dist>=100){
+      runs.unshift({id:"live-"+draft.start,start:draft.start,dur:Math.round(draft.elapsed),dist:Math.round(draft.dist),newM:Math.round(draft.newM),src:"live",pts:thin(draft.pts||[])});
+      await idb.set("kv","runs",runs); await idb.set("kv","draft",null);
+      toast("En avbrutt løpetur ble lagret");
+    }
+  }catch(e){ console.warn(e); }
+  setRunUI(); updateStats(); sheetH();
+  startWatch(); loadView();
+  if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>
