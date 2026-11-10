@@ -1,5 +1,5 @@
 // Løpekart service worker: appen fungerer offline, og kartfliser du har sett, caches.
-const APP = "lopekart-app-v10";
+const APP = "lopekart-app-v11";
 const TILES = "lopekart-tiles-v1";
 const MAX_TILES = 3000;
 const SHELL = ["./", "index.html", "manifest.webmanifest", "leaflet.js", "leaflet.css", "fb-app.js", "fb-auth.js", "fb-store.js",
@@ -46,7 +46,7 @@ self.addEventListener("fetch", e => {
   }
   // Selve appen: nett først (så oppdateringer kommer), cache når du er offline
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, {cache: "no-cache"}).then(res => {
       if (res.ok) caches.open(APP).then(c => c.put(req, res.clone()));
       return res;
     }).catch(() => caches.match(req).then(r => r || caches.match("index.html"))));
